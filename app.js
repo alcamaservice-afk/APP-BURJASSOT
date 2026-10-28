@@ -984,8 +984,8 @@
   }
 
   function updateLiveWorkDue() {
-    const conc = parseFloat(elements.workTotalPriceInput.value) || 0;
-    const pag = parseFloat(elements.workPaidAmountInput.value) || 0;
+    const conc = parsePrice(elements.workTotalPriceInput.value);
+    const pag = parsePrice(elements.workPaidAmountInput.value);
     elements.workLiveDue.textContent = formatCurrency(Math.max(0, conc - pag));
   }
 
@@ -1028,10 +1028,10 @@
   }
 
   function updateLiveFinancingCalculation() {
-    const amount = parseFloat(elements.finAmountInput.value) || 0;
+    const amount = parsePrice(elements.finAmountInput.value);
     const rateCount = parseInt(elements.finInstallmentsSelect.value, 10) || 10;
     const interestType = elements.finInterestTypeSelect.value;
-    const interestVal = parseFloat(elements.finInterestValInput.value) || 0;
+    const interestVal = parsePrice(elements.finInterestValInput.value);
 
     let interests = 0;
     if (interestType === 'percent') interests = amount * (interestVal / 100);
@@ -1072,7 +1072,7 @@
     
     elements.itemFinancingSelect.addEventListener('change', () => {
       if (elements.itemFinancingSelect.value === '__create_new__') {
-        const itemPrice = (parseFloat(elements.itemPriceInput.value) || 0) * (parseInt(elements.itemQuantityInput.value, 10) || 1);
+        const itemPrice = parsePrice(elements.itemPriceInput.value) * (parseInt(elements.itemQuantityInput.value, 10) || 1);
         openAddFinancingModal();
         if (itemPrice > 0) {
           elements.finAmountInput.value = itemPrice;
@@ -1102,7 +1102,7 @@
         name: elements.itemNameInput.value.trim(),
         room: elements.itemRoomSelect.value,
         store: elements.itemStoreInput.value.trim(),
-        price: parseFloat(elements.itemPriceInput.value) || 0,
+        price: parsePrice(elements.itemPriceInput.value),
         quantity: parseInt(elements.itemQuantityInput.value, 10) || 1,
         paymentStatus: paymentStatus,
         financingId: finId,
@@ -1173,8 +1173,8 @@
       e.preventDefault();
       const id = elements.workIdInput.value || 'work-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
       const isExisting = works.some(w => w.id === id);
-      const total = parseFloat(elements.workTotalPriceInput.value) || 0;
-      const paid = parseFloat(elements.workPaidAmountInput.value) || 0;
+      const total = parsePrice(elements.workTotalPriceInput.value);
+      const paid = parsePrice(elements.workPaidAmountInput.value);
 
       const newWork = {
         id: id,
@@ -1246,10 +1246,10 @@
       const id = elements.finIdInput.value || 'fin-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
       const isExisting = financings.some(f => f.id === id);
 
-      const amount = parseFloat(elements.finAmountInput.value) || 0;
+      const amount = parsePrice(elements.finAmountInput.value);
       const rateCount = parseInt(elements.finInstallmentsSelect.value, 10) || 10;
       const interestType = elements.finInterestTypeSelect.value;
-      const interestVal = parseFloat(elements.finInterestValInput.value) || 0;
+      const interestVal = parsePrice(elements.finInterestValInput.value);
 
       let interests = 0;
       if (interestType === 'percent') interests = amount * (interestVal / 100);
@@ -1335,7 +1335,7 @@
 
     elements.btnConfirmWorkPay.addEventListener('click', () => {
       if (!selectedWorkForPayment) return;
-      const amountToAdd = parseFloat(elements.workQuickPayAmount.value) || 0;
+      const amountToAdd = parsePrice(elements.workQuickPayAmount.value);
       selectedWorkForPayment.paidAmount = Math.min(selectedWorkForPayment.totalPrice, (selectedWorkForPayment.paidAmount || 0) + amountToAdd);
       selectedWorkForPayment.dueAmount = Math.max(0, selectedWorkForPayment.totalPrice - selectedWorkForPayment.paidAmount);
       if (selectedWorkForPayment.dueAmount === 0) selectedWorkForPayment.status = 'completed';
@@ -1679,7 +1679,7 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=5.1').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=5.2').then((reg) => {
           reg.update(); // Forza l'aggiornamento immediato del service worker
         }).catch(() => {});
       });
@@ -1728,9 +1728,22 @@
   }
 
   // --- HELPERS ---
+  function parsePrice(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    if (typeof val === 'number') return isNaN(val) ? 0 : Math.round(val * 100) / 100;
+    const str = String(val).trim().replace(',', '.');
+    const n = parseFloat(str);
+    return isNaN(n) ? 0 : Math.round(n * 100) / 100;
+  }
+
   function formatCurrency(n) {
-    if (isNaN(n) || n === 0) return '0 €';
-    return Number(n).toLocaleString('it-IT', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' €';
+    if (isNaN(n) || n === 0 || n === null || n === undefined) return '0 €';
+    const num = Number(n);
+    const hasDecimals = (num % 1 !== 0);
+    return num.toLocaleString('it-IT', {
+      minimumFractionDigits: hasDecimals ? 2 : 0,
+      maximumFractionDigits: 2
+    }) + ' €';
   }
 
   function getRoomBadgeClass(r) {
