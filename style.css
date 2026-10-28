@@ -237,7 +237,7 @@ body {
   gap: 10px;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 600px) {
   .global-stats-row {
     grid-template-columns: 1fr;
     gap: 8px;
@@ -272,7 +272,7 @@ body {
 .val-paid-cash { color: #34D399; }
 .val-remain-cash { color: #FBBF24; }
 
-/* TAB SWITCHER */
+/* 3-TAB SWITCHER */
 .nav-tabs-wrapper {
   display: flex;
   background: var(--bg-card);
@@ -285,11 +285,11 @@ body {
 
 .tab-btn {
   flex: 1;
-  padding: 10px 14px;
+  padding: 10px 8px;
   border-radius: var(--radius-sm);
   border: none;
   background: transparent;
-  font-size: 0.92rem;
+  font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
@@ -297,7 +297,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
+  text-align: center;
 }
 
 .tab-btn.active {
@@ -307,8 +308,8 @@ body {
 }
 
 .tab-badge-counter {
-  font-size: 0.72rem;
-  padding: 2px 7px;
+  font-size: 0.7rem;
+  padding: 2px 6px;
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.25);
   color: inherit;
@@ -324,6 +325,13 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
+}
+
+@media (max-width: 500px) {
+  .tab-metrics-bar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 
 .sub-metric-card {
@@ -762,6 +770,103 @@ body {
   color: var(--success);
 }
 
+/* FINANCING (FINANZIAMENTO) CARD */
+.financing-card {
+  background: var(--bg-card);
+  border: 1px solid #E9D5FF;
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: var(--transition);
+  position: relative;
+}
+
+.financing-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--purple);
+}
+
+.fin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.fin-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #581C87;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fin-stats-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #FAF5FF;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  text-align: center;
+  border: 1px solid #F3E8FF;
+}
+
+.fin-stat-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fin-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: #7E22CE;
+  font-weight: 600;
+}
+
+.fin-stat-val {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #581C87;
+}
+
+.fin-items-preview {
+  background: var(--bg-subtle);
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fin-items-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.fin-items-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fin-item-pill {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px 8px;
+  font-size: 0.75rem;
+}
+
 /* Card Actions */
 .item-footer {
   display: flex;
@@ -1051,6 +1156,15 @@ body {
 
 .btn-success:hover {
   background: #059669;
+}
+
+.btn-purple {
+  background: var(--purple);
+  color: white;
+}
+
+.btn-purple:hover {
+  background: #7C3AED;
 }
 
 /* PWA Banner */

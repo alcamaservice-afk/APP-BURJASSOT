@@ -1,20 +1,22 @@
 /**
- * CASA BURJASSOT - Progressive Web App (Versione 2: Materiali + Lavori + Finanziamenti)
- * Sincronizzazione automatica Google Sheet, gestione budget, filtri e PWA installabile.
+ * CASA BURJASSOT - Progressive Web App (Versione 3: Sincronizzazione Real-Time + Finanziamenti)
+ * Materiali, Manodopera e Piani di Finanziamento con calcolo automatico delle rate e sincronizzazione continua.
  */
 
 (function () {
   'use strict';
 
-  // --- CONFIGURAZIONE & URL GOOGLE APPS SCRIPT ---
+  // --- CONFIGURAZIONE GOOGLE APPS SCRIPT ---
   const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbxA6uG7zWv4GIJPiy5YTBuCmgWo0baDoi01cG5k3zpVpHkgTlNzJQ9O9Blt9yEERg-Khg/exec';
-  const STORAGE_ITEMS_KEY = 'burjassot_shopping_items_v2';
-  const STORAGE_WORKS_KEY = 'burjassot_renovation_works_v2';
-  
+  const STORAGE_ITEMS_KEY = 'burjassot_shopping_items_v3';
+  const STORAGE_WORKS_KEY = 'burjassot_renovation_works_v3';
+  const STORAGE_FIN_KEY = 'burjassot_financings_v3';
+
   // --- STATO APPLICAZIONE ---
   let items = [];
   let works = [];
-  let currentTab = 'materials'; // 'materials' | 'works'
+  let financings = [];
+  let currentTab = 'materials'; // 'materials' | 'works' | 'financings'
 
   // Filtri Materiali
   let currentFilterRoom = 'all';
@@ -29,12 +31,12 @@
   let currentWorksStatus = 'all';
   let currentWorksDue = 'all';
 
-  // Flag stato
-  let deferredInstallPrompt = null;
+  // Stato sincronizzazione e UI
   let isSyncing = false;
-  let autoSyncTimeout = null;
-
-  // Lavoro selezionato per acconto rapido
+  let lastPushTimestamp = 0;
+  let autoSyncDebounceTimer = null;
+  let isAnyModalOpen = false;
+  let deferredInstallPrompt = null;
   let selectedWorkForPayment = null;
 
   // --- ELEMENTI DOM ---
@@ -45,22 +47,25 @@
     btnOpenSync: document.getElementById('btn-open-sync'),
     syncIcon: document.getElementById('sync-icon'),
     syncStatusIndicator: document.getElementById('sync-status-indicator'),
+    headerSyncCaption: document.getElementById('header-sync-caption'),
 
     // Quadro Globale
     statGrandTotal: document.getElementById('stat-grand-total'),
     statGlobalProgress: document.getElementById('stat-global-progress'),
     statGlobalFinanced: document.getElementById('stat-global-financed'),
-    statFinancedCount: document.getElementById('stat-financed-count'),
+    statMonthlyRateSub: document.getElementById('stat-monthly-rate-sub'),
     statGlobalPaidCash: document.getElementById('stat-global-paid-cash'),
     statGlobalRemainCash: document.getElementById('stat-global-remain-cash'),
 
-    // Tab switcher
+    // 3 Tab
     tabMaterials: document.getElementById('tab-materials'),
     tabWorks: document.getElementById('tab-works'),
+    tabFinancings: document.getElementById('tab-financings'),
     badgeMaterialsCount: document.getElementById('badge-materials-count'),
     badgeWorksCount: document.getElementById('badge-works-count'),
+    badgeFinancingsCount: document.getElementById('badge-financings-count'),
 
-    // Metriche Sub-tab
+    // Submetriche
     submetricsMaterials: document.getElementById('submetrics-materials'),
     statMatTotal: document.getElementById('stat-mat-total'),
     statMatCount: document.getElementById('stat-mat-count'),
@@ -73,9 +78,17 @@
     statWorksPaid: document.getElementById('stat-works-paid'),
     statWorksDue: document.getElementById('stat-works-due'),
 
-    // Sezioni Filtri
+    submetricsFinancings: document.getElementById('submetrics-financings'),
+    statFinTotal: document.getElementById('stat-fin-total'),
+    statFinPlansCount: document.getElementById('stat-fin-plans-count'),
+    statFinMonthlyTotal: document.getElementById('stat-fin-monthly-total'),
+    statFinInterestTotal: document.getElementById('stat-fin-interest-total'),
+
+    // Filtri
     filtersMaterialsSection: document.getElementById('filters-materials-section'),
     filtersWorksSection: document.getElementById('filters-works-section'),
+    filtersFinancingsSection: document.getElementById('filters-financings-section'),
+    btnCreateFinTop: document.getElementById('btn-create-fin-top'),
 
     // Filtri Materiali
     searchInput: document.getElementById('search-input'),
@@ -92,9 +105,10 @@
     filterWorksStatus: document.getElementById('filter-works-status'),
     filterWorksDue: document.getElementById('filter-works-due'),
 
-    // Contenitori Liste
+    // Liste
     itemsContainer: document.getElementById('items-list-container'),
     worksContainer: document.getElementById('works-list-container'),
+    financingsContainer: document.getElementById('financings-list-container'),
 
     // FAB
     fabAddMain: document.getElementById('fab-add-main'),
@@ -111,8 +125,8 @@
     itemPriceInput: document.getElementById('item-price'),
     itemQuantityInput: document.getElementById('item-quantity'),
     itemPaymentStatusSelect: document.getElementById('item-payment-status'),
-    groupFinancedDetails: document.getElementById('group-financed-details'),
-    itemFinancedDetailsInput: document.getElementById('item-financed-details'),
+    groupSelectFinancing: document.getElementById('group-select-financing'),
+    itemFinancingSelect: document.getElementById('item-financing-select'),
     itemDimensionsInput: document.getElementById('item-dimensions'),
     itemColorInput: document.getElementById('item-color'),
     itemPrioritySelect: document.getElementById('item-priority'),
@@ -137,7 +151,27 @@
     btnCloseWorkModal: document.getElementById('btn-close-work-modal'),
     btnCancelWork: document.getElementById('btn-cancel-work'),
 
-    // Modal Acconto Rapido Lavoro
+    // Modal Finanziamento
+    modalFinancing: document.getElementById('modal-financing'),
+    modalFinTitle: document.getElementById('modal-fin-title'),
+    formFinancing: document.getElementById('form-financing'),
+    finIdInput: document.getElementById('fin-id'),
+    finNameInput: document.getElementById('fin-name'),
+    finAmountInput: document.getElementById('fin-amount'),
+    finInstallmentsSelect: document.getElementById('fin-installments'),
+    finInterestTypeSelect: document.getElementById('fin-interest-type'),
+    groupFinInterestVal: document.getElementById('group-fin-interest-val'),
+    lblFinInterestVal: document.getElementById('lbl-fin-interest-val'),
+    finInterestValInput: document.getElementById('fin-interest-val'),
+    finPreviewMonthly: document.getElementById('fin-preview-monthly'),
+    finPreviewInterests: document.getElementById('fin-preview-interests'),
+    finPreviewTotal: document.getElementById('fin-preview-total'),
+    finStartDateInput: document.getElementById('fin-start-date'),
+    finNotesInput: document.getElementById('fin-notes'),
+    btnCloseFinModal: document.getElementById('btn-close-fin-modal'),
+    btnCancelFin: document.getElementById('btn-cancel-fin'),
+
+    // Modal Acconto Lavoro
     modalWorkPayment: document.getElementById('modal-work-payment'),
     workPaySubtitle: document.getElementById('work-pay-subtitle'),
     workQuickPayAmount: document.getElementById('work-quick-pay-amount'),
@@ -165,7 +199,7 @@
     btnCopyClipboard: document.getElementById('btn-copy-clipboard'),
     btnExportCsv: document.getElementById('btn-export-csv'),
 
-    // PWA Banner & Toast
+    // PWA & Toast
     pwaInstallBanner: document.getElementById('pwa-install-banner'),
     btnPwaInstall: document.getElementById('btn-pwa-install'),
     btnPwaDismiss: document.getElementById('btn-pwa-dismiss'),
@@ -173,6 +207,22 @@
   };
 
   // --- DATI DI PARTENZA REALISTICI PER BURJASSOT ---
+  const DEFAULT_FINANCINGS = [
+    {
+      id: 'fin-ikea-1',
+      name: 'Findomestic IKEA Tasso 0',
+      totalAmount: 520,
+      installmentsCount: 10,
+      interestType: 'zero',
+      interestValue: 0,
+      totalWithInterest: 520,
+      monthlyInstallment: 52,
+      startDate: 'Novembre 2026',
+      notes: 'Finanziamento tasso zero con addebito mensile',
+      updatedAt: new Date().toISOString()
+    }
+  ];
+
   const DEFAULT_ITEMS = [
     {
       id: 'burj-item-1',
@@ -182,7 +232,8 @@
       price: 110,
       quantity: 1,
       paymentStatus: 'to_pay',
-      financedDetails: '',
+      financingId: '',
+      financingName: '',
       dimensions: 'ca. 35 metri lineari',
       color: 'Rovere naturale',
       priority: 'Alta',
@@ -199,7 +250,8 @@
       price: 240,
       quantity: 1,
       paymentStatus: 'paid_cash',
-      financedDetails: '',
+      financingId: '',
+      financingName: '',
       dimensions: '80 x 120 cm (H 195 cm)',
       color: 'Cromo lucido',
       priority: 'Alta',
@@ -216,7 +268,8 @@
       price: 195,
       quantity: 1,
       paymentStatus: 'to_pay',
-      financedDetails: '',
+      financingId: '',
+      financingName: '',
       dimensions: '80 x 47 x 68 cm',
       color: 'Effetto rovere chiaro',
       priority: 'Media',
@@ -233,13 +286,14 @@
       price: 520,
       quantity: 1,
       paymentStatus: 'financed',
-      financedDetails: '10 rate da 52,00€ a tasso 0',
+      financingId: 'fin-ikea-1',
+      financingName: 'Findomestic IKEA Tasso 0',
       dimensions: '225 x 95 cm',
       color: 'Grigio antracite',
       priority: 'Alta',
       status: 'bought',
       link: '',
-      notes: 'Finanziato direttamente da IKEA',
+      notes: 'Associato al finanziamento IKEA',
       updatedAt: new Date().toISOString()
     },
     {
@@ -250,7 +304,8 @@
       price: 48,
       quantity: 1,
       paymentStatus: 'to_pay',
-      financedDetails: '',
+      financingId: '',
+      financingName: '',
       dimensions: 'Altezza 35 cm',
       color: 'Nero opaco',
       priority: 'Media',
@@ -304,138 +359,176 @@
     setupPWA();
     renderAll();
 
-    // Sincronizzazione automatica all'avvio
-    updateSyncBadge('syncing');
-    syncWithCloud({ silent: true });
+    // Sincronizzazione immediata all'apertura
+    pullFromCloud({ silent: true });
+
+    // POLLING CONTINUO: controlla aggiornamenti ogni 10 secondi
+    setInterval(() => {
+      // Non aggiornare se l'utente sta scrivendo in un form modale
+      if (!isAnyModalOpen && !isSyncing) {
+        pullFromCloud({ silent: true });
+      }
+    }, 10000);
+
+    // WAKEUP REATTIVO: appena torni sull'app o cambi scheda, sincronizza subito!
+    window.addEventListener('focus', () => {
+      if (!isAnyModalOpen) pullFromCloud({ silent: true });
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && !isAnyModalOpen) {
+        pullFromCloud({ silent: true });
+      }
+    });
   }
 
   // --- CARICAMENTO & SALVATAGGIO LOCALE ---
   function loadLocalData() {
     try {
-      const rawItems = localStorage.getItem(STORAGE_ITEMS_KEY);
-      items = rawItems ? JSON.parse(rawItems) : [...DEFAULT_ITEMS];
-    } catch (e) {
-      items = [...DEFAULT_ITEMS];
-    }
+      const rawI = localStorage.getItem(STORAGE_ITEMS_KEY);
+      items = rawI ? JSON.parse(rawI) : [...DEFAULT_ITEMS];
+    } catch (e) { items = [...DEFAULT_ITEMS]; }
 
     try {
-      const rawWorks = localStorage.getItem(STORAGE_WORKS_KEY);
-      works = rawWorks ? JSON.parse(rawWorks) : [...DEFAULT_WORKS];
-    } catch (e) {
-      works = [...DEFAULT_WORKS];
-    }
+      const rawW = localStorage.getItem(STORAGE_WORKS_KEY);
+      works = rawW ? JSON.parse(rawW) : [...DEFAULT_WORKS];
+    } catch (e) { works = [...DEFAULT_WORKS]; }
 
-    saveLocalData(false);
+    try {
+      const rawF = localStorage.getItem(STORAGE_FIN_KEY);
+      financings = rawF ? JSON.parse(rawF) : [...DEFAULT_FINANCINGS];
+    } catch (e) { financings = [...DEFAULT_FINANCINGS]; }
+
+    saveLocalStateOnly();
   }
 
-  function saveLocalData(triggerSync = true) {
+  function saveLocalStateOnly() {
     localStorage.setItem(STORAGE_ITEMS_KEY, JSON.stringify(items));
     localStorage.setItem(STORAGE_WORKS_KEY, JSON.stringify(works));
+    localStorage.setItem(STORAGE_FIN_KEY, JSON.stringify(financings));
+  }
+
+  function onDataChangedByUser() {
+    saveLocalStateOnly();
     renderAll();
-
-    if (triggerSync && !isSyncing) {
-      debounceAutoSync();
-    }
+    // Invia immediatamente al cloud
+    debouncePushToCloud();
   }
 
-  function debounceAutoSync() {
-    clearTimeout(autoSyncTimeout);
-    autoSyncTimeout = setTimeout(() => {
-      syncWithCloud({ silent: true });
-    }, 1500);
+  function debouncePushToCloud() {
+    clearTimeout(autoSyncDebounceTimer);
+    autoSyncDebounceTimer = setTimeout(() => {
+      pushToCloud({ silent: true });
+    }, 400);
   }
 
-  // --- SINCRONIZZAZIONE AUTOMATICA CON GOOGLE APPS SCRIPT ---
-  async function syncWithCloud(options = {}) {
+  // --- MOTORE DI SINCRONIZZAZIONE (PULL & PUSH) ---
+  // 1. PULL (Scarica dal Google Sheet)
+  async function pullFromCloud(options = {}) {
     if (isSyncing) return;
+    // Se abbiamo appena fatto un push meno di 3 secondi fa, non risovrascrivere
+    if (Date.now() - lastPushTimestamp < 3000) return;
+
     isSyncing = true;
     updateSyncBadge('syncing');
 
     try {
-      // 1. GET: Scarica sia Materiali che Lavori
-      const getRes = await fetch(DEFAULT_SYNC_URL + '?t=' + Date.now(), {
+      const res = await fetch(DEFAULT_SYNC_URL + '?t=' + Date.now(), {
         method: 'GET',
         headers: { 'Accept': 'application/json' }
       });
 
-      const data = await getRes.json();
+      const data = await res.json();
 
       if (data && data.status === 'success') {
-        // Unione intelligente Materiali
-        if (Array.isArray(data.items) && data.items.length > 0) {
-          const map = new Map();
-          data.items.forEach(it => map.set(it.id, it));
-          items.forEach(local => {
-            if (!map.has(local.id)) {
-              map.set(local.id, local);
-            } else {
-              const cloud = map.get(local.id);
-              if (new Date(local.updatedAt || 0) > new Date(cloud.updatedAt || 0)) {
-                map.set(local.id, local);
-              }
-            }
-          });
-          items = Array.from(map.values());
+        let changed = false;
+
+        // Se il cloud ha elementi, aggiorniamo il nostro stato
+        if (Array.isArray(data.items)) {
+          if (JSON.stringify(items) !== JSON.stringify(data.items)) {
+            items = data.items;
+            changed = true;
+          }
+        }
+        if (Array.isArray(data.works)) {
+          if (JSON.stringify(works) !== JSON.stringify(data.works)) {
+            works = data.works;
+            changed = true;
+          }
+        }
+        if (Array.isArray(data.financings)) {
+          if (JSON.stringify(financings) !== JSON.stringify(data.financings)) {
+            financings = data.financings;
+            changed = true;
+          }
         }
 
-        // Unione intelligente Lavori
-        if (Array.isArray(data.works) && data.works.length > 0) {
-          const wMap = new Map();
-          data.works.forEach(w => wMap.set(w.id, w));
-          works.forEach(localW => {
-            if (!wMap.has(localW.id)) {
-              wMap.set(localW.id, localW);
-            } else {
-              const cloudW = wMap.get(localW.id);
-              if (new Date(localW.updatedAt || 0) > new Date(cloudW.updatedAt || 0)) {
-                wMap.set(localW.id, localW);
-              }
-            }
-          });
-          works = Array.from(wMap.values());
+        // Se il foglio sul cloud era vuoto, carichiamo i dati iniziali
+        if (items.length === 0 && DEFAULT_ITEMS.length > 0) {
+          items = [...DEFAULT_ITEMS];
+          works = [...DEFAULT_WORKS];
+          financings = [...DEFAULT_FINANCINGS];
+          pushToCloud({ silent: true });
+          changed = true;
         }
 
-        localStorage.setItem(STORAGE_ITEMS_KEY, JSON.stringify(items));
-        localStorage.setItem(STORAGE_WORKS_KEY, JSON.stringify(works));
-
-        // 2. POST: Invia al Google Sheet l'elenco completo per sincronizzarlo
-        await fetch(DEFAULT_SYNC_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'sync_all',
-            items: items,
-            works: works
-          })
-        });
+        if (changed) {
+          saveLocalStateOnly();
+          renderAll();
+        }
 
         updateSyncBadge('online');
         if (!options.silent) {
-          showToast('✅ Sincronizzato con il tuo Google Sheet!');
+          showToast('✅ Dati aggiornati dal Google Sheet!');
         }
       } else {
-        // Se il foglio è appena creato o vuoto, mandiamo i nostri dati
-        await fetch(DEFAULT_SYNC_URL, {
-          method: 'POST',
-          body: JSON.stringify({
-            action: 'sync_all',
-            items: items,
-            works: works
-          })
-        });
-        updateSyncBadge('online');
-        if (!options.silent) {
-          showToast('✅ Dati inviati al Google Sheet!');
-        }
+        updateSyncBadge('offline');
       }
     } catch (err) {
-      console.warn('Errore sync:', err);
+      console.warn('Pull error:', err);
+      updateSyncBadge('offline');
+    } finally {
+      isSyncing = false;
+    }
+  }
+
+  // 2. PUSH (Invia le modifiche al Google Sheet)
+  async function pushToCloud(options = {}) {
+    if (isSyncing) return;
+    isSyncing = true;
+    lastPushTimestamp = Date.now();
+    updateSyncBadge('syncing');
+
+    try {
+      const payload = {
+        action: 'sync_all',
+        items: items,
+        works: works,
+        financings: financings
+      };
+
+      // Invia come text/plain per evitare problemi di preflight CORS
+      const res = await fetch(DEFAULT_SYNC_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const json = await res.json().catch(() => ({ status: 'success' }));
+      updateSyncBadge('online');
+      if (!options.silent) {
+        showToast('✅ Modifiche salvate sul Google Sheet!');
+      }
+    } catch (err) {
+      console.warn('Push error:', err);
       updateSyncBadge('offline');
       if (!options.silent) {
-        showToast('⚠️ Non connesso al foglio Google. I dati sono salvati in locale.');
+        showToast('⚠️ Errore salvataggio online. Dati salvati in locale.');
       }
     } finally {
       isSyncing = false;
-      renderAll();
     }
   }
 
@@ -443,16 +536,19 @@
     elements.syncStatusIndicator.className = 'sync-status-dot';
     if (status === 'online') {
       elements.syncStatusIndicator.classList.add('status-online');
-      elements.syncStatusIndicator.title = 'Sincronizzato online con Google Sheet';
+      elements.syncStatusIndicator.title = 'Sincronizzato online in tempo reale';
       elements.syncIcon.style.animation = 'none';
+      elements.headerSyncCaption.textContent = 'Sincronizzato online in tempo reale';
     } else if (status === 'syncing') {
       elements.syncStatusIndicator.classList.add('status-syncing');
       elements.syncStatusIndicator.title = 'Sincronizzazione in corso...';
       elements.syncIcon.style.animation = 'spin 1s linear infinite';
+      elements.headerSyncCaption.textContent = 'Sincronizzazione in corso...';
     } else {
       elements.syncStatusIndicator.classList.add('status-offline');
-      elements.syncStatusIndicator.title = 'Offline o errore sincronizzazione';
+      elements.syncStatusIndicator.title = 'Non connesso / Offline';
       elements.syncIcon.style.animation = 'none';
+      elements.headerSyncCaption.textContent = 'Salvataggio in locale (offline)';
     }
   }
 
@@ -462,26 +558,27 @@
     if (currentTab === 'materials') {
       renderMaterialsSubmetrics();
       renderMaterialsList();
-    } else {
+    } else if (currentTab === 'works') {
       renderWorksSubmetrics();
       renderWorksList();
+    } else {
+      renderFinancingsSubmetrics();
+      renderFinancingsList();
     }
   }
 
-  // 1. QUADRO ECONOMICO GLOBALE (Materiali + Lavori + Finanziamenti)
+  // 1. QUADRO GLOBALE
   function renderGlobalAccounting() {
     let matTotal = 0;
     let matFinanced = 0;
     let matPaidCash = 0;
     let matToPayCash = 0;
-    let financedCount = 0;
 
     items.forEach(it => {
       const cost = (Number(it.price) || 0) * (Number(it.quantity) || 1);
       matTotal += cost;
       if (it.paymentStatus === 'financed') {
         matFinanced += cost;
-        financedCount++;
       } else if (it.paymentStatus === 'paid_cash') {
         matPaidCash += cost;
       } else {
@@ -501,17 +598,27 @@
       worksDue += Math.max(0, conc - pag);
     });
 
+    // Calcolo rate mensili totali da tutti i piani di finanziamento
+    let totalMonthlyRates = 0;
+    let totalFinancedCapital = 0;
+    financings.forEach(f => {
+      totalMonthlyRates += Number(f.monthlyInstallment) || 0;
+      totalFinancedCapital += Number(f.totalAmount) || 0;
+    });
+
+    // Se ci sono oggetti finanziati non ancora associati a un piano, considerali nel totale finanziato
+    const displayedFinanced = Math.max(matFinanced, totalFinancedCapital);
+
     const grandTotal = matTotal + worksTotal;
     const globalPaidCash = matPaidCash + worksPaid;
     const globalRemainCash = matToPayCash + worksDue;
 
-    // Percentuale completamento spesa pagata/finanziata rispetto al totale
-    const completedBudget = matPaidCash + matFinanced + worksPaid;
+    const completedBudget = matPaidCash + displayedFinanced + worksPaid;
     const progressPercent = grandTotal > 0 ? Math.min(100, Math.round((completedBudget / grandTotal) * 100)) : 0;
 
     elements.statGrandTotal.textContent = formatCurrency(grandTotal);
-    elements.statGlobalFinanced.textContent = formatCurrency(matFinanced);
-    elements.statFinancedCount.textContent = `${financedCount} articol${financedCount === 1 ? 'o' : 'i'} a rate`;
+    elements.statGlobalFinanced.textContent = formatCurrency(displayedFinanced);
+    elements.statMonthlyRateSub.textContent = `Tot. rate: ${formatCurrency(totalMonthlyRates)} / mese`;
     elements.statGlobalPaidCash.textContent = formatCurrency(globalPaidCash);
     elements.statGlobalRemainCash.textContent = formatCurrency(globalRemainCash);
     elements.statGlobalProgress.textContent = progressPercent + '%';
@@ -519,14 +626,12 @@
     // Badge contatori sui tab
     elements.badgeMaterialsCount.textContent = items.length;
     elements.badgeWorksCount.textContent = works.length;
+    elements.badgeFinancingsCount.textContent = financings.length;
   }
 
   // Submetriche Materiali
   function renderMaterialsSubmetrics() {
-    let matTotal = 0;
-    let matPaid = 0;
-    let matFinanced = 0;
-
+    let matTotal = 0, matPaid = 0, matFinanced = 0;
     items.forEach(it => {
       const cost = (Number(it.price) || 0) * (Number(it.quantity) || 1);
       matTotal += cost;
@@ -542,10 +647,7 @@
 
   // Submetriche Lavori
   function renderWorksSubmetrics() {
-    let worksTotal = 0;
-    let worksPaid = 0;
-    let worksDue = 0;
-
+    let worksTotal = 0, worksPaid = 0, worksDue = 0;
     works.forEach(w => {
       const conc = Number(w.totalPrice) || 0;
       const pag = Number(w.paidAmount) || 0;
@@ -560,22 +662,35 @@
     elements.statWorksDue.textContent = formatCurrency(worksDue);
   }
 
+  // Submetriche Finanziamenti
+  function renderFinancingsSubmetrics() {
+    let finTotal = 0, monthlyTotal = 0, interestTotal = 0;
+    financings.forEach(f => {
+      const cap = Number(f.totalAmount) || 0;
+      const totWithInt = Number(f.totalWithInterest) || cap;
+      finTotal += cap;
+      monthlyTotal += Number(f.monthlyInstallment) || 0;
+      interestTotal += Math.max(0, totWithInt - cap);
+    });
+
+    elements.statFinTotal.textContent = formatCurrency(finTotal);
+    elements.statFinPlansCount.textContent = `${financings.length} piani attivi`;
+    elements.statFinMonthlyTotal.textContent = `${formatCurrency(monthlyTotal)} / mese`;
+    elements.statFinInterestTotal.textContent = formatCurrency(interestTotal);
+  }
+
   // --- RENDER LISTA MATERIALI ---
   function renderMaterialsList() {
     let filtered = items.filter(item => {
-      // Stanza
       if (currentFilterRoom !== 'all') {
         if ((item.room || '').toLowerCase() !== currentFilterRoom.toLowerCase()) return false;
       }
-      // Stato
       if (currentFilterStatus !== 'all') {
         if (item.status !== currentFilterStatus) return false;
       }
-      // Pagamento
       if (currentFilterPayment !== 'all') {
         if (item.paymentStatus !== currentFilterPayment) return false;
       }
-      // Negozio (Brico Depôt primo)
       if (currentFilterStore !== 'all') {
         const itemStore = (item.store || '').toLowerCase();
         if (currentFilterStore === 'Altro') {
@@ -585,9 +700,8 @@
           return false;
         }
       }
-      // Ricerca
       if (currentSearchQuery) {
-        const full = `${item.name} ${item.store} ${item.room} ${item.color} ${item.dimensions} ${item.financedDetails} ${item.notes}`.toLowerCase();
+        const full = `${item.name} ${item.store} ${item.room} ${item.color} ${item.dimensions} ${item.financingName} ${item.notes}`.toLowerCase();
         if (!full.includes(currentSearchQuery)) return false;
       }
       return true;
@@ -641,10 +755,11 @@
       const priorityClass = getPriorityClass(item.priority);
       const isBricoDepot = (item.store || '').toLowerCase().includes('brico');
 
-      // Tag Pagamento
+      // Tag Pagamento & Finanziamento
       let paymentBadge = '';
       if (item.paymentStatus === 'financed') {
-        paymentBadge = '<span class="tag-badge tag-payment-financed">💳 Finanziato</span>';
+        const finPlanName = item.financingName ? `: ${escapeHtml(item.financingName)}` : '';
+        paymentBadge = `<span class="tag-badge tag-payment-financed">💳 Finanziato${finPlanName}</span>`;
       } else if (item.paymentStatus === 'paid_cash') {
         paymentBadge = '<span class="tag-badge tag-payment-paid">💵 Pagato Cash</span>';
       } else {
@@ -678,9 +793,9 @@
           </div>
 
           <!-- Dettagli Finanziamento se presente -->
-          ${item.paymentStatus === 'financed' && item.financedDetails ? `
+          ${item.paymentStatus === 'financed' ? `
             <div class="item-financed-box">
-              <span>💳 <strong>Rate:</strong> ${escapeHtml(item.financedDetails)}</span>
+              <span>💳 <strong>Piano Rateale:</strong> ${escapeHtml(item.financingName || 'Non ancora associato a un piano')}</span>
             </div>
           ` : ''}
 
@@ -719,16 +834,13 @@
     elements.itemsContainer.innerHTML = html;
   }
 
-  // --- RENDER LISTA LAVORI (MANODOPERA) ---
+  // --- RENDER LISTA LAVORI ---
   function renderWorksList() {
     let filtered = works.filter(w => {
-      // Stato
       if (currentWorksStatus !== 'all' && w.status !== currentWorksStatus) return false;
-      // Saldo dovuto
       const dovuto = Math.max(0, (w.totalPrice || 0) - (w.paidAmount || 0));
       if (currentWorksDue === 'with_due' && dovuto <= 0) return false;
       if (currentWorksDue === 'fully_paid' && dovuto > 0) return false;
-      // Ricerca
       if (currentWorksSearchQuery) {
         const full = `${w.title} ${w.worker} ${w.notes}`.toLowerCase();
         if (!full.includes(currentWorksSearchQuery)) return false;
@@ -741,7 +853,7 @@
         <div class="empty-state">
           <div class="empty-state-icon">🔨</div>
           <h3 class="empty-state-title">Nessun lavoro registrato</h3>
-          <p class="empty-state-desc">Aggiungi i lavori di manodopera (cucina, battiscopa, idraulico...) e tieni traccia degli acconti!</p>
+          <p class="empty-state-desc">Aggiungi i lavori di manodopera (cucina, battiscopa, idraulico...) e gestisci gli acconti!</p>
           <button class="btn btn-primary" id="btn-empty-add-work">+ Aggiungi Lavoro</button>
         </div>
       `;
@@ -780,7 +892,6 @@
             </div>
           </div>
 
-          <!-- Striscia Contabile Lavoro -->
           <div class="work-accounting-strip">
             <div class="work-acc-col">
               <span class="work-acc-label">Concordato</span>
@@ -796,14 +907,12 @@
             </div>
           </div>
 
-          <!-- Note -->
           ${work.notes ? `
             <div class="item-notes">
               📝 ${escapeHtml(work.notes)}
             </div>
           ` : ''}
 
-          <!-- Footer Lavoro -->
           <div class="item-footer">
             ${dovuto > 0 ? `
               <button class="btn btn-secondary" style="font-size:0.8rem; padding: 6px 12px;" data-action="quick-pay">
@@ -823,8 +932,103 @@
     elements.worksContainer.innerHTML = html;
   }
 
-  // --- MODALI & FORM CONTROLLI ---
+  // --- RENDER LISTA FINANZIAMENTI ---
+  function renderFinancingsList() {
+    if (financings.length === 0) {
+      elements.financingsContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">💳</div>
+          <h3 class="empty-state-title">Nessun finanziamento creato</h3>
+          <p class="empty-state-desc">Crea un piano di rateizzazione (es. Findomestic IKEA, Santander, Brico Depôt Tasso 0) per calcolare la rata mensile e associare gli oggetti!</p>
+          <button class="btn btn-purple" id="btn-empty-add-fin">+ Crea Nuovo Finanziamento</button>
+        </div>
+      `;
+      const btn = document.getElementById('btn-empty-add-fin');
+      if (btn) btn.addEventListener('click', openAddFinancingModal);
+      return;
+    }
+
+    let html = '';
+    financings.forEach(fin => {
+      const cap = Number(fin.totalAmount) || 0;
+      const rateCount = Number(fin.installmentsCount) || 10;
+      const monthly = Number(fin.monthlyInstallment) || (cap / rateCount);
+      const totalWithInt = Number(fin.totalWithInterest) || cap;
+      const interests = Math.max(0, totalWithInt - cap);
+
+      // Trova oggetti associati a questo finanziamento
+      const linkedItems = items.filter(it => it.financingId === fin.id);
+      const linkedSum = linkedItems.reduce((acc, it) => acc + ((it.price || 0) * (it.quantity || 1)), 0);
+
+      html += `
+        <article class="financing-card" data-id="${fin.id}">
+          <div class="fin-header">
+            <div>
+              <h3 class="fin-title">💳 ${escapeHtml(fin.name)}</h3>
+              <span style="font-size: 0.75rem; color: #7E22CE;">
+                ${fin.interestType === 'zero' ? 'Tasso 0% (Senza Interessi)' : (fin.interestType === 'percent' ? `TAN / Interessi: ${fin.interestValue}%` : `Costo fisso: ${formatCurrency(fin.interestValue)}`)}
+                ${fin.startDate ? ` • Inizio: ${escapeHtml(fin.startDate)}` : ''}
+              </span>
+            </div>
+          </div>
+
+          <!-- Striscia Calcolo Rate -->
+          <div class="fin-stats-strip">
+            <div class="fin-stat-col">
+              <span class="fin-stat-label">Capitale</span>
+              <span class="fin-stat-val">${formatCurrency(cap)}</span>
+            </div>
+            <div class="fin-stat-col">
+              <span class="fin-stat-label">Rata Mensile</span>
+              <span class="fin-stat-val" style="color:#581C87; font-size:1.15rem;">${formatCurrency(monthly)} / m</span>
+              <span style="font-size:0.68rem; color:#7E22CE;">${rateCount} rate</span>
+            </div>
+            <div class="fin-stat-col">
+              <span class="fin-stat-label">Tot. con Interessi</span>
+              <span class="fin-stat-val">${formatCurrency(totalWithInt)}</span>
+              ${interests > 0 ? `<span style="font-size:0.68rem; color:var(--danger);">(+${formatCurrency(interests)})</span>` : ''}
+            </div>
+          </div>
+
+          <!-- Oggetti Associati -->
+          <div class="fin-items-preview">
+            <div class="fin-items-header">
+              📦 Oggetti Inclusi (${linkedItems.length} - Tot. ${formatCurrency(linkedSum)}):
+            </div>
+            <div class="fin-items-list">
+              ${linkedItems.length > 0 ? linkedItems.map(it => `
+                <span class="fin-item-pill">
+                  ${escapeHtml(it.name)} (${formatCurrency((it.price || 0) * (it.quantity || 1))})
+                </span>
+              `).join('') : '<span style="color:var(--text-muted); font-size:0.75rem;">Nessun articolo associato ancora. Modifica un materiale e assegnalo a questo finanziamento!</span>'}
+            </div>
+          </div>
+
+          ${fin.notes ? `
+            <div class="item-notes">
+              📝 ${escapeHtml(fin.notes)}
+            </div>
+          ` : ''}
+
+          <div class="item-footer">
+            <span style="font-size:0.75rem; color:var(--text-muted);">
+              ${rateCount} mensilità da ${formatCurrency(monthly)}
+            </span>
+            <div class="item-actions-btns">
+              <button class="btn-card-action" data-action="edit-fin" title="Modifica piano">✏️</button>
+              <button class="btn-card-action btn-delete" data-action="delete-fin" title="Elimina piano">🗑️</button>
+            </div>
+          </div>
+        </article>
+      `;
+    });
+
+    elements.financingsContainer.innerHTML = html;
+  }
+
+  // --- MODALI & CONTROLLI ---
   function openModal(modal) {
+    isAnyModalOpen = true;
     modal.classList.add('is-open');
     document.body.style.overflow = 'hidden';
   }
@@ -832,6 +1036,7 @@
   function closeModal(modal) {
     modal.classList.remove('is-open');
     document.body.style.overflow = '';
+    isAnyModalOpen = false;
   }
 
   // Materiale Modal
@@ -843,7 +1048,8 @@
     elements.itemPrioritySelect.value = 'Media';
     elements.itemStatusSelect.value = 'pending';
     elements.itemPaymentStatusSelect.value = 'to_pay';
-    toggleFinancedDetails();
+    populateFinancingDropdown('');
+    togglePaymentFinancingSection();
     openModal(elements.modalItem);
     setTimeout(() => elements.itemNameInput.focus(), 150);
   }
@@ -857,20 +1063,30 @@
     elements.itemPriceInput.value = item.price || '';
     elements.itemQuantityInput.value = item.quantity || 1;
     elements.itemPaymentStatusSelect.value = item.paymentStatus || 'to_pay';
-    elements.itemFinancedDetailsInput.value = item.financedDetails || '';
+    populateFinancingDropdown(item.financingId || '');
     elements.itemDimensionsInput.value = item.dimensions || '';
     elements.itemColorInput.value = item.color || '';
     elements.itemPrioritySelect.value = item.priority || 'Media';
     elements.itemStatusSelect.value = item.status || 'pending';
     elements.itemLinkInput.value = item.link || '';
     elements.itemNotesInput.value = item.notes || '';
-    toggleFinancedDetails();
+    togglePaymentFinancingSection();
     openModal(elements.modalItem);
   }
 
-  function toggleFinancedDetails() {
-    const isFinanced = elements.itemPaymentStatusSelect.value === 'financed';
-    elements.groupFinancedDetails.style.display = isFinanced ? 'flex' : 'none';
+  function togglePaymentFinancingSection() {
+    const isFin = elements.itemPaymentStatusSelect.value === 'financed';
+    elements.groupSelectFinancing.style.display = isFin ? 'flex' : 'none';
+  }
+
+  function populateFinancingDropdown(selectedFinId) {
+    let options = '<option value="">-- Seleziona Finanziamento --</option>';
+    financings.forEach(f => {
+      const isSel = f.id === selectedFinId ? 'selected' : '';
+      options += `<option value="${f.id}" ${isSel}>${escapeHtml(f.name)} (${f.installmentsCount} rate da ${formatCurrency(f.monthlyInstallment)}/m)</option>`;
+    });
+    options += '<option value="__create_new__">➕ Crea Nuovo Finanziamento...</option>';
+    elements.itemFinancingSelect.innerHTML = options;
   }
 
   // Lavoro Modal
@@ -900,40 +1116,125 @@
   function updateLiveWorkDue() {
     const conc = parseFloat(elements.workTotalPriceInput.value) || 0;
     const pag = parseFloat(elements.workPaidAmountInput.value) || 0;
-    const dovuto = Math.max(0, conc - pag);
-    elements.workLiveDue.textContent = formatCurrency(dovuto);
+    elements.workLiveDue.textContent = formatCurrency(Math.max(0, conc - pag));
+  }
+
+  // Finanziamento Modal & Calcolo Automatico
+  function openAddFinancingModal() {
+    elements.modalFinTitle.textContent = 'Nuovo Piano di Finanziamento';
+    elements.finIdInput.value = '';
+    elements.formFinancing.reset();
+    elements.finInstallmentsSelect.value = '10';
+    elements.finInterestTypeSelect.value = 'zero';
+    elements.finInterestValInput.value = '0';
+    toggleInterestInput();
+    updateLiveFinancingCalculation();
+    openModal(elements.modalFinancing);
+    setTimeout(() => elements.finNameInput.focus(), 150);
+  }
+
+  function openEditFinancingModal(fin) {
+    elements.modalFinTitle.textContent = 'Modifica Piano di Finanziamento';
+    elements.finIdInput.value = fin.id;
+    elements.finNameInput.value = fin.name || '';
+    elements.finAmountInput.value = fin.totalAmount || '';
+    elements.finInstallmentsSelect.value = String(fin.installmentsCount || 10);
+    elements.finInterestTypeSelect.value = fin.interestType || 'zero';
+    elements.finInterestValInput.value = fin.interestValue || '0';
+    elements.finStartDateInput.value = fin.startDate || '';
+    elements.finNotesInput.value = fin.notes || '';
+    toggleInterestInput();
+    updateLiveFinancingCalculation();
+    openModal(elements.modalFinancing);
+  }
+
+  function toggleInterestInput() {
+    const type = elements.finInterestTypeSelect.value;
+    if (type === 'zero') {
+      elements.groupFinInterestVal.style.display = 'none';
+    } else {
+      elements.groupFinInterestVal.style.display = 'flex';
+      elements.lblFinInterestVal.textContent = type === 'percent' ? 'Interesse / TAN (%)' : 'Costo Fisso / Istruttoria (€)';
+    }
+  }
+
+  function updateLiveFinancingCalculation() {
+    const amount = parseFloat(elements.finAmountInput.value) || 0;
+    const rateCount = parseInt(elements.finInstallmentsSelect.value, 10) || 10;
+    const interestType = elements.finInterestTypeSelect.value;
+    const interestVal = parseFloat(elements.finInterestValInput.value) || 0;
+
+    let interests = 0;
+    if (interestType === 'percent') {
+      interests = amount * (interestVal / 100);
+    } else if (interestType === 'fixed') {
+      interests = interestVal;
+    }
+
+    const totalWithInterest = amount + interests;
+    const monthly = rateCount > 0 ? (totalWithInterest / rateCount) : 0;
+
+    elements.finPreviewMonthly.textContent = `${formatCurrency(monthly)} / mese`;
+    elements.finPreviewInterests.textContent = formatCurrency(interests);
+    elements.finPreviewTotal.textContent = formatCurrency(totalWithInterest);
   }
 
   // Acconto Rapido Modal
   function openQuickPayModal(work) {
     selectedWorkForPayment = work;
     const dovuto = Math.max(0, (work.totalPrice || 0) - (work.paidAmount || 0));
-    elements.workPaySubtitle.textContent = `${work.title} - Residuo da saldare: ${formatCurrency(dovuto)}`;
+    elements.workPaySubtitle.textContent = `${work.title} - Residuo dovuto: ${formatCurrency(dovuto)}`;
     elements.workQuickPayAmount.value = dovuto;
     openModal(elements.modalWorkPayment);
   }
 
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
-    // Tab switching
+    // 3 Tab Switcher
     elements.tabMaterials.addEventListener('click', () => switchTab('materials'));
     elements.tabWorks.addEventListener('click', () => switchTab('works'));
+    elements.tabFinancings.addEventListener('click', () => switchTab('financings'));
+    elements.btnCreateFinTop.addEventListener('click', openAddFinancingModal);
 
     // FAB
     elements.fabAddMain.addEventListener('click', () => {
       if (currentTab === 'materials') openAddMaterialModal();
-      else openAddWorkModal();
+      else if (currentTab === 'works') openAddWorkModal();
+      else openAddFinancingModal();
     });
 
     // Modal Materiale
     elements.btnCloseItemModal.addEventListener('click', () => closeModal(elements.modalItem));
     elements.btnCancelItem.addEventListener('click', () => closeModal(elements.modalItem));
-    elements.itemPaymentStatusSelect.addEventListener('change', toggleFinancedDetails);
+    elements.itemPaymentStatusSelect.addEventListener('change', togglePaymentFinancingSection);
+    
+    // Se sceglie "+ Crea Nuovo Finanziamento" dalla tendina dei materiali
+    elements.itemFinancingSelect.addEventListener('change', () => {
+      if (elements.itemFinancingSelect.value === '__create_new__') {
+        const itemPrice = (parseFloat(elements.itemPriceInput.value) || 0) * (parseInt(elements.itemQuantityInput.value, 10) || 1);
+        openAddFinancingModal();
+        if (itemPrice > 0) {
+          elements.finAmountInput.value = itemPrice;
+          updateLiveFinancingCalculation();
+        }
+      }
+    });
 
     elements.formItem.addEventListener('submit', (e) => {
       e.preventDefault();
       const id = elements.itemIdInput.value || 'item-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
       const isExisting = items.some(it => it.id === id);
+
+      const paymentStatus = elements.itemPaymentStatusSelect.value;
+      let finId = '';
+      let finName = '';
+
+      if (paymentStatus === 'financed') {
+        finId = elements.itemFinancingSelect.value;
+        if (finId === '__create_new__') finId = '';
+        const foundFin = financings.find(f => f.id === finId);
+        if (foundFin) finName = foundFin.name;
+      }
 
       const newItem = {
         id: id,
@@ -942,8 +1243,9 @@
         store: elements.itemStoreInput.value.trim(),
         price: parseFloat(elements.itemPriceInput.value) || 0,
         quantity: parseInt(elements.itemQuantityInput.value, 10) || 1,
-        paymentStatus: elements.itemPaymentStatusSelect.value,
-        financedDetails: elements.itemPaymentStatusSelect.value === 'financed' ? elements.itemFinancedDetailsInput.value.trim() : '',
+        paymentStatus: paymentStatus,
+        financingId: finId,
+        financingName: finName,
         dimensions: elements.itemDimensionsInput.value.trim(),
         color: elements.itemColorInput.value.trim(),
         priority: elements.itemPrioritySelect.value,
@@ -958,14 +1260,14 @@
         showToast('✏️ Materiale aggiornato!');
       } else {
         items.unshift(newItem);
-        showToast('✨ Materiale aggiunto alla lista!');
+        showToast('✨ Materiale aggiunto!');
       }
 
-      saveLocalData(true);
       closeModal(elements.modalItem);
+      onDataChangedByUser();
     });
 
-    // Materiali Card Delegation (toggle comprato, edit, delete)
+    // Materiali Card Delegation
     elements.itemsContainer.addEventListener('click', (e) => {
       const card = e.target.closest('.item-card');
       if (!card) return;
@@ -976,8 +1278,8 @@
       if (e.target.closest('[data-action="toggle-bought"]')) {
         item.status = item.status === 'bought' ? 'pending' : 'bought';
         item.updatedAt = new Date().toISOString();
-        saveLocalData(true);
         showToast(item.status === 'bought' ? '✅ Segnato come comprato!' : '⏳ Rimesso da comprare');
+        onDataChangedByUser();
         return;
       }
 
@@ -989,8 +1291,8 @@
       if (e.target.closest('[data-action="delete"]')) {
         if (confirm(`Vuoi eliminare "${item.name}"?`)) {
           items = items.filter(it => it.id !== itemId);
-          saveLocalData(true);
           showToast('🗑️ Materiale eliminato');
+          onDataChangedByUser();
         }
         return;
       }
@@ -1026,14 +1328,14 @@
         showToast('✏️ Lavoro aggiornato!');
       } else {
         works.unshift(newWork);
-        showToast('🔨 Lavoro aggiunto alla lista!');
+        showToast('🔨 Lavoro aggiunto!');
       }
 
-      saveLocalData(true);
       closeModal(elements.modalWork);
+      onDataChangedByUser();
     });
 
-    // Lavori Card Delegation (quick-pay, edit, delete)
+    // Lavori Card Delegation
     elements.worksContainer.addEventListener('click', (e) => {
       const card = e.target.closest('.work-card');
       if (!card) return;
@@ -1045,17 +1347,101 @@
         openQuickPayModal(work);
         return;
       }
-
       if (e.target.closest('[data-action="edit-work"]')) {
         openEditWorkModal(work);
         return;
       }
-
       if (e.target.closest('[data-action="delete-work"]')) {
         if (confirm(`Vuoi eliminare il lavoro "${work.title}"?`)) {
           works = works.filter(w => w.id !== workId);
-          saveLocalData(true);
-          showToast('🗑️ Lavoro rimosso');
+          showToast('🗑️ Lavoro eliminato');
+          onDataChangedByUser();
+        }
+        return;
+      }
+    });
+
+    // Modal Finanziamento & Calcolo dinamico
+    elements.btnCloseFinModal.addEventListener('click', () => closeModal(elements.modalFinancing));
+    elements.btnCancelFin.addEventListener('click', () => closeModal(elements.modalFinancing));
+    elements.finAmountInput.addEventListener('input', updateLiveFinancingCalculation);
+    elements.finInstallmentsSelect.addEventListener('change', updateLiveFinancingCalculation);
+    elements.finInterestTypeSelect.addEventListener('change', () => {
+      toggleInterestInput();
+      updateLiveFinancingCalculation();
+    });
+    elements.finInterestValInput.addEventListener('input', updateLiveFinancingCalculation);
+
+    elements.formFinancing.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const id = elements.finIdInput.value || 'fin-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+      const isExisting = financings.some(f => f.id === id);
+
+      const amount = parseFloat(elements.finAmountInput.value) || 0;
+      const rateCount = parseInt(elements.finInstallmentsSelect.value, 10) || 10;
+      const interestType = elements.finInterestTypeSelect.value;
+      const interestVal = parseFloat(elements.finInterestValInput.value) || 0;
+
+      let interests = 0;
+      if (interestType === 'percent') interests = amount * (interestVal / 100);
+      else if (interestType === 'fixed') interests = interestVal;
+
+      const totalWithInterest = amount + interests;
+      const monthly = rateCount > 0 ? (totalWithInterest / rateCount) : 0;
+
+      const newFin = {
+        id: id,
+        name: elements.finNameInput.value.trim(),
+        totalAmount: amount,
+        installmentsCount: rateCount,
+        interestType: interestType,
+        interestValue: interestVal,
+        totalWithInterest: totalWithInterest,
+        monthlyInstallment: monthly,
+        startDate: elements.finStartDateInput.value.trim(),
+        notes: elements.finNotesInput.value.trim(),
+        updatedAt: new Date().toISOString()
+      };
+
+      if (isExisting) {
+        financings = financings.map(f => f.id === id ? newFin : f);
+        // Aggiorna anche il nome del finanziamento negli oggetti associati
+        items.forEach(it => {
+          if (it.financingId === id) it.financingName = newFin.name;
+        });
+        showToast('✏️ Finanziamento aggiornato!');
+      } else {
+        financings.unshift(newFin);
+        showToast('💳 Nuovo finanziamento creato!');
+      }
+
+      closeModal(elements.modalFinancing);
+      onDataChangedByUser();
+    });
+
+    // Finanziamenti Card Delegation
+    elements.financingsContainer.addEventListener('click', (e) => {
+      const card = e.target.closest('.financing-card');
+      if (!card) return;
+      const finId = card.dataset.id;
+      const fin = financings.find(f => f.id === finId);
+      if (!fin) return;
+
+      if (e.target.closest('[data-action="edit-fin"]')) {
+        openEditFinancingModal(fin);
+        return;
+      }
+      if (e.target.closest('[data-action="delete-fin"]')) {
+        if (confirm(`Vuoi eliminare il finanziamento "${fin.name}"? Gli articoli associati rimarranno ma senza piano collegato.`)) {
+          financings = financings.filter(f => f.id !== finId);
+          items.forEach(it => {
+            if (it.financingId === finId) {
+              it.financingId = '';
+              it.financingName = '';
+            }
+          });
+          showToast('🗑️ Finanziamento eliminato');
+          onDataChangedByUser();
         }
         return;
       }
@@ -1071,9 +1457,9 @@
       selectedWorkForPayment.dueAmount = 0;
       selectedWorkForPayment.status = 'completed';
       selectedWorkForPayment.updatedAt = new Date().toISOString();
-      saveLocalData(true);
       showToast('💰 Lavoro saldato al 100%!');
       closeModal(elements.modalWorkPayment);
+      onDataChangedByUser();
     });
 
     elements.btnConfirmWorkPay.addEventListener('click', () => {
@@ -1083,9 +1469,9 @@
       selectedWorkForPayment.dueAmount = Math.max(0, selectedWorkForPayment.totalPrice - selectedWorkForPayment.paidAmount);
       if (selectedWorkForPayment.dueAmount === 0) selectedWorkForPayment.status = 'completed';
       selectedWorkForPayment.updatedAt = new Date().toISOString();
-      saveLocalData(true);
       showToast('💵 Acconto registrato!');
       closeModal(elements.modalWorkPayment);
+      onDataChangedByUser();
     });
 
     // Filtri Materiali
@@ -1161,7 +1547,9 @@
     elements.btnCloseSync.addEventListener('click', () => closeModal(elements.modalSync));
 
     elements.btnForceSync.addEventListener('click', () => {
-      syncWithCloud({ silent: false });
+      showToast('🔄 Sincronizzazione in corso...');
+      pullFromCloud({ silent: false });
+      pushToCloud({ silent: true });
     });
 
     elements.btnExportBackup.addEventListener('click', exportBackupJson);
@@ -1177,7 +1565,7 @@
     elements.btnExportCsv.addEventListener('click', exportCsv);
 
     // Chiudi modali cliccando sul backdrop
-    [elements.modalItem, elements.modalWork, elements.modalWorkPayment, elements.modalSync, elements.modalShare].forEach(m => {
+    [elements.modalItem, elements.modalWork, elements.modalFinancing, elements.modalWorkPayment, elements.modalSync, elements.modalShare].forEach(m => {
       m.addEventListener('click', (e) => {
         if (e.target === m) closeModal(m);
       });
@@ -1185,8 +1573,8 @@
 
     // Online / Offline
     window.addEventListener('online', () => {
-      showToast('🌐 Connessione internet ripristinata!');
-      syncWithCloud({ silent: true });
+      showToast('🌐 Tornato online! Sincronizzazione...');
+      pullFromCloud({ silent: true });
     });
 
     window.addEventListener('offline', () => {
@@ -1197,39 +1585,34 @@
 
   function switchTab(tab) {
     currentTab = tab;
-    if (tab === 'materials') {
-      elements.tabMaterials.classList.add('active');
-      elements.tabWorks.classList.remove('active');
-      elements.submetricsMaterials.style.display = 'grid';
-      elements.submetricsWorks.style.display = 'none';
-      elements.filtersMaterialsSection.style.display = 'flex';
-      elements.filtersWorksSection.style.display = 'none';
-      elements.itemsContainer.style.display = 'flex';
-      elements.worksContainer.style.display = 'none';
-      elements.fabLabel.textContent = 'Aggiungi Materiale';
-      renderMaterialsSubmetrics();
-      renderMaterialsList();
-    } else {
-      elements.tabWorks.classList.add('active');
-      elements.tabMaterials.classList.remove('active');
-      elements.submetricsWorks.style.display = 'grid';
-      elements.submetricsMaterials.style.display = 'none';
-      elements.filtersWorksSection.style.display = 'flex';
-      elements.filtersMaterialsSection.style.display = 'none';
-      elements.worksContainer.style.display = 'flex';
-      elements.itemsContainer.style.display = 'none';
-      elements.fabLabel.textContent = 'Aggiungi Lavoro';
-      renderWorksSubmetrics();
-      renderWorksList();
-    }
+    elements.tabMaterials.classList.toggle('active', tab === 'materials');
+    elements.tabWorks.classList.toggle('active', tab === 'works');
+    elements.tabFinancings.classList.toggle('active', tab === 'financings');
+
+    elements.submetricsMaterials.style.display = tab === 'materials' ? 'grid' : 'none';
+    elements.submetricsWorks.style.display = tab === 'works' ? 'grid' : 'none';
+    elements.submetricsFinancings.style.display = tab === 'financings' ? 'grid' : 'none';
+
+    elements.filtersMaterialsSection.style.display = tab === 'materials' ? 'flex' : 'none';
+    elements.filtersWorksSection.style.display = tab === 'works' ? 'flex' : 'none';
+    elements.filtersFinancingsSection.style.display = tab === 'financings' ? 'flex' : 'none';
+
+    elements.itemsContainer.style.display = tab === 'materials' ? 'flex' : 'none';
+    elements.worksContainer.style.display = tab === 'works' ? 'flex' : 'none';
+    elements.financingsContainer.style.display = tab === 'financings' ? 'flex' : 'none';
+
+    if (tab === 'materials') elements.fabLabel.textContent = 'Aggiungi Materiale';
+    else if (tab === 'works') elements.fabLabel.textContent = 'Aggiungi Lavoro';
+    else elements.fabLabel.textContent = 'Nuovo Finanziamento';
+
+    renderAll();
   }
 
-  // --- SHARE WHATSAPP & EXPORT ---
+  // --- SHARE WHATSAPP & CSV ---
   function generateShareText() {
-    let text = `🏠 *CASA BURJASSOT - RIEPILOGO SPESE & LAVORI*\n`;
+    let text = `🏠 *CASA BURJASSOT - RIEPILOGO COMPLETO*\n`;
     text += `Aggiornato al: ${new Date().toLocaleDateString('it-IT')}\n\n`;
 
-    // Calcoli totali
     let matTotal = 0, matFinanced = 0, matPaid = 0, matDue = 0;
     items.forEach(it => {
       const c = (it.price || 0) * (it.quantity || 1);
@@ -1246,29 +1629,44 @@
       worksDue += Math.max(0, (w.totalPrice || 0) - (w.paidAmount || 0));
     });
 
+    let monthlyRateTotal = 0;
+    financings.forEach(f => {
+      monthlyRateTotal += Number(f.monthlyInstallment) || 0;
+    });
+
     const grand = matTotal + worksTotal;
     const totPaid = matPaid + worksPaid;
     const totDue = matDue + worksDue;
 
     text += `💰 *QUADRO ECONOMICO:*\n`;
-    text += `• Totale Preventivato: *${formatCurrency(grand)}*\n`;
-    text += `• Totale Finanziato: *${formatCurrency(matFinanced)}*\n`;
+    text += `• Spesa Totale Prevista: *${formatCurrency(grand)}*\n`;
+    text += `• Totale Finanziato: *${formatCurrency(matFinanced)}* (Rata complessiva: *${formatCurrency(monthlyRateTotal)}/mese*)\n`;
     text += `• Già Pagato Cash: *${formatCurrency(totPaid)}*\n`;
-    text += `• Rimanente da Saldare Cash: *${formatCurrency(totDue)}*\n\n`;
+    text += `• Residuo da Saldare Cash: *${formatCurrency(totDue)}*\n\n`;
 
-    text += `🔨 *LAVORI & MANODOPERA (${works.length}):*\n`;
-    works.forEach(w => {
-      const dovuto = Math.max(0, (w.totalPrice || 0) - (w.paidAmount || 0));
-      text += `• ${w.title} (${w.worker || 'Professionista'}): Concordato ${formatCurrency(w.totalPrice)} | Pagato: ${formatCurrency(w.paidAmount)} | Da saldare: *${formatCurrency(dovuto)}*\n`;
-    });
-    text += `\n`;
+    if (financings.length > 0) {
+      text += `💳 *PIANI DI FINANZIAMENTO (${financings.length}):*\n`;
+      financings.forEach(f => {
+        text += `• ${f.name}: ${formatCurrency(f.totalAmount)} in ${f.installmentsCount} rate da *${formatCurrency(f.monthlyInstallment)}/mese*\n`;
+      });
+      text += `\n`;
+    }
+
+    if (works.length > 0) {
+      text += `🔨 *LAVORI & MANODOPERA (${works.length}):*\n`;
+      works.forEach(w => {
+        const dovuto = Math.max(0, (w.totalPrice || 0) - (w.paidAmount || 0));
+        text += `• ${w.title} (${w.worker || 'Professionista'}): Concordato ${formatCurrency(w.totalPrice)} | Pagato: ${formatCurrency(w.paidAmount)} | Da saldare: *${formatCurrency(dovuto)}*\n`;
+      });
+      text += `\n`;
+    }
 
     const pendingMat = items.filter(it => it.status !== 'bought');
     text += `📦 *MATERIALI DA COMPRARE (${pendingMat.length}):*\n`;
     pendingMat.forEach(it => {
       const cost = it.price ? ` - ${formatCurrency(it.price * (it.quantity || 1))}` : '';
       const st = it.store ? ` (${it.store})` : '';
-      const fin = it.paymentStatus === 'financed' ? ' [Finanziato]' : '';
+      const fin = it.paymentStatus === 'financed' ? ` [Finanziato: ${it.financingName || 'A rate'}]` : '';
       text += `• ${it.name}${cost}${st}${fin}\n`;
     });
 
@@ -1307,7 +1705,7 @@
     let csv = '\uFEFF';
     // Sezione Materiali
     csv += 'SEZIONE MATERIALI & MOBILI\r\n';
-    csv += 'Nome;Stanza;Negozio;Prezzo;Quantita;Totale;Modalita Pagamento;Rate Finanziamento;Dimensioni;Colore;Priorita;Stato;Note\r\n';
+    csv += 'Nome;Stanza;Negozio;Prezzo;Quantita;Totale;Modalita Pagamento;Finanziamento Collegato;Dimensioni;Colore;Priorita;Stato;Note\r\n';
     items.forEach(it => {
       csv += [
         `"${(it.name || '').replace(/"/g, '""')}"`,
@@ -1317,7 +1715,7 @@
         it.quantity || 1,
         (it.price || 0) * (it.quantity || 1),
         it.paymentStatus === 'financed' ? 'Finanziato' : (it.paymentStatus === 'paid_cash' ? 'Pagato Cash' : 'Da Pagare Cash'),
-        `"${(it.financedDetails || '').replace(/"/g, '""')}"`,
+        `"${(it.financingName || '').replace(/"/g, '""')}"`,
         `"${(it.dimensions || '').replace(/"/g, '""')}"`,
         `"${(it.color || '').replace(/"/g, '""')}"`,
         `"${(it.priority || '').replace(/"/g, '""')}"`,
@@ -1326,20 +1724,37 @@
       ].join(';') + '\r\n';
     });
 
+    // Sezione Lavori
     csv += '\r\n\r\nSEZIONE LAVORI & MANODOPERA\r\n';
     csv += 'Titolo Lavoro;Professionista;Prezzo Concordato;Gia Pagato;Residuo Dovuto;Stato;Note\r\n';
     works.forEach(w => {
       const conc = w.totalPrice || 0;
       const pag = w.paidAmount || 0;
-      const dov = Math.max(0, conc - pag);
       csv += [
         `"${(w.title || '').replace(/"/g, '""')}"`,
         `"${(w.worker || '').replace(/"/g, '""')}"`,
         conc,
         pag,
-        dov,
+        Math.max(0, conc - pag),
         `"${(w.status || '').replace(/"/g, '""')}"`,
         `"${(w.notes || '').replace(/"/g, '""')}"`
+      ].join(';') + '\r\n';
+    });
+
+    // Sezione Finanziamenti
+    csv += '\r\n\r\nSEZIONE PIANI DI FINANZIAMENTO\r\n';
+    csv += 'Nome Piano;Capitale;Numero Rate;Tipo Interesse;Valore Interesse;Totale Con Interessi;Rata Mensile;Data Inizio;Note\r\n';
+    financings.forEach(f => {
+      csv += [
+        `"${(f.name || '').replace(/"/g, '""')}"`,
+        f.totalAmount || 0,
+        f.installmentsCount || 10,
+        `"${f.interestType || 'zero'}"`,
+        f.interestValue || 0,
+        f.totalWithInterest || 0,
+        f.monthlyInstallment || 0,
+        `"${(f.startDate || '').replace(/"/g, '""')}"`,
+        `"${(f.notes || '').replace(/"/g, '""')}"`
       ].join(';') + '\r\n';
     });
 
@@ -1353,10 +1768,11 @@
 
   function exportBackupJson() {
     const backup = {
-      version: 2,
+      version: 3,
       exportDate: new Date().toISOString(),
       items: items,
-      works: works
+      works: works,
+      financings: financings
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
     const link = document.createElement('a');
@@ -1374,15 +1790,14 @@
     reader.onload = (evt) => {
       try {
         const json = JSON.parse(evt.target.result);
-        if (json.items && Array.isArray(json.items)) {
-          items = json.items;
-        } else if (Array.isArray(json)) {
-          items = json;
-        }
-        if (json.works && Array.isArray(json.works)) {
-          works = json.works;
-        }
-        saveLocalData(true);
+        if (json.items && Array.isArray(json.items)) items = json.items;
+        else if (Array.isArray(json)) items = json;
+        if (json.works && Array.isArray(json.works)) works = json.works;
+        if (json.financings && Array.isArray(json.financings)) financings = json.financings;
+
+        saveLocalStateOnly();
+        renderAll();
+        pushToCloud({ silent: true });
         showToast('📤 Backup ripristinato con successo!');
         closeModal(elements.modalSync);
       } catch (err) {

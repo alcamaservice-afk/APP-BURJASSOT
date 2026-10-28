@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>Casa Burjassot - Arredo & Lavori</title>
+  <title>Casa Burjassot - Arredo, Lavori & Finanziamenti</title>
   
   <!-- PWA & Mobile Meta Tags -->
-  <meta name="description" content="Lista condivisa per arredo, bagno, cucina, battiscopa e lavori per l'appartamento a Burjassot con sincronizzazione automatica Google Sheet.">
+  <meta name="description" content="Gestione condivisa acquisti, manodopera e piani di finanziamento per l'appartamento di Burjassot con sincronizzazione istantanea.">
   <meta name="theme-color" content="#C85A32">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -27,7 +27,7 @@
         <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
         <div>
           <h1 class="brand-title">Casa Burjassot 🏠</h1>
-          <span class="brand-subtitle">Spese, Arredo & Manodopera</span>
+          <span class="brand-subtitle" id="header-sync-caption">Sincronizzazione automatica attiva</span>
         </div>
       </div>
       
@@ -43,9 +43,9 @@
         </button>
 
         <!-- Sync Button -->
-        <button id="btn-open-sync" class="btn-icon-header" title="Sincronizzazione Cloud Google Sheet">
+        <button id="btn-open-sync" class="btn-icon-header" title="Sincronizza subito con Google Sheet">
           <span id="sync-icon">🔄</span>
-          <span id="sync-status-indicator" class="sync-status-dot status-syncing" title="Sincronizzazione automatica attiva"></span>
+          <span id="sync-status-indicator" class="sync-status-dot status-syncing" title="Stato sincronizzazione"></span>
         </button>
       </div>
     </div>
@@ -54,7 +54,7 @@
   <!-- Main Container -->
   <main class="main-content">
     
-    <!-- 1. QUADRO ECONOMICO GLOBALE (MATERIALI + LAVORI) -->
+    <!-- 1. QUADRO ECONOMICO GLOBALE (MATERIALI + LAVORI + FINANZIAMENTI) -->
     <section class="global-accounting-card">
       <div class="global-header-row">
         <div class="global-title-box">
@@ -70,11 +70,11 @@
 
       <!-- 3 Colonne Finanziarie Richieste -->
       <div class="global-stats-row">
-        <!-- Finanziato -->
+        <!-- Finanziato & Rata Mensile -->
         <div class="global-pill-stat">
           <span class="global-pill-label">💳 Totale Finanziato</span>
           <span class="global-pill-val val-financed" id="stat-global-financed">0 €</span>
-          <span style="font-size: 0.68rem; color: #CBD5E1;" id="stat-financed-count">0 articoli a rate</span>
+          <span style="font-size: 0.72rem; color: #E9D5FF; font-weight: 600;" id="stat-monthly-rate-sub">Rata: 0 € / mese</span>
         </div>
 
         <!-- Pagato Cash -->
@@ -93,19 +93,23 @@
       </div>
     </section>
 
-    <!-- 2. TAB SWITCHER (MATERIALI vs LAVORI) -->
+    <!-- 2. 3-TAB SWITCHER (MATERIALI / LAVORI / FINANZIAMENTI) -->
     <nav class="nav-tabs-wrapper">
       <button class="tab-btn active" id="tab-materials">
-        <span>📦 Materiali & Arredo</span>
+        <span>📦 Materiali</span>
         <span class="tab-badge-counter" id="badge-materials-count">0</span>
       </button>
       <button class="tab-btn" id="tab-works">
-        <span>🔨 Lavori & Manodopera</span>
+        <span>🔨 Lavori</span>
         <span class="tab-badge-counter" id="badge-works-count">0</span>
+      </button>
+      <button class="tab-btn" id="tab-financings">
+        <span>💳 Finanziamenti</span>
+        <span class="tab-badge-counter" id="badge-financings-count">0</span>
       </button>
     </nav>
 
-    <!-- 3. DETTAGLIO CONTABILITÀ SEPARATA PER SCHEDA -->
+    <!-- 3. SUBMETRICHE DETTAGLIO ATTIVO -->
     <section class="tab-metrics-bar" id="submetrics-materials">
       <div class="sub-metric-card">
         <span class="sub-metric-label">Tot. Materiali</span>
@@ -120,7 +124,7 @@
       <div class="sub-metric-card">
         <span class="sub-metric-label">Finanziati</span>
         <span class="sub-metric-val" style="color: var(--purple);" id="stat-mat-financed">0 €</span>
-        <span class="sub-metric-note">A rate</span>
+        <span class="sub-metric-note">Associati a rate</span>
       </div>
     </section>
 
@@ -128,30 +132,46 @@
       <div class="sub-metric-card">
         <span class="sub-metric-label">Tot. Concordato</span>
         <span class="sub-metric-val" id="stat-works-total">0 €</span>
-        <span class="sub-metric-note" id="stat-works-count">0 lavori</span>
+        <span class="sub-metric-note" id="stat-works-count">0 interventi</span>
       </div>
       <div class="sub-metric-card">
         <span class="sub-metric-label">Acconti Versati</span>
         <span class="sub-metric-val" style="color: var(--success);" id="stat-works-paid">0 €</span>
-        <span class="sub-metric-note">Già pagato</span>
+        <span class="sub-metric-note">Già versati</span>
       </div>
       <div class="sub-metric-card">
         <span class="sub-metric-label">Residuo Dovuto</span>
         <span class="sub-metric-val" style="color: var(--danger);" id="stat-works-due">0 €</span>
-        <span class="sub-metric-note">Ancora da saldare</span>
+        <span class="sub-metric-note">Da saldare</span>
       </div>
     </section>
 
-    <!-- 4. CONTROLLI DI RICERCA & FILTRI (PER MATERIALI) -->
+    <section class="tab-metrics-bar" id="submetrics-financings" style="display: none;">
+      <div class="sub-metric-card">
+        <span class="sub-metric-label">Capitale Finanziato</span>
+        <span class="sub-metric-val" style="color: var(--purple);" id="stat-fin-total">0 €</span>
+        <span class="sub-metric-note" id="stat-fin-plans-count">0 piani attivi</span>
+      </div>
+      <div class="sub-metric-card">
+        <span class="sub-metric-label">Rata Mensile Totale</span>
+        <span class="sub-metric-val" style="color: #6B21A8;" id="stat-fin-monthly-total">0 € / mese</span>
+        <span class="sub-metric-note">Somma rate</span>
+      </div>
+      <div class="sub-metric-card">
+        <span class="sub-metric-label">Interessi Calcolati</span>
+        <span class="sub-metric-val" style="color: var(--text-muted);" id="stat-fin-interest-total">0 €</span>
+        <span class="sub-metric-note">Costo finanziamento</span>
+      </div>
+    </section>
+
+    <!-- 4. FILTRI MATERIALI -->
     <section class="search-filter-card" id="filters-materials-section">
-      <!-- Search Input -->
       <div class="search-box">
         <span class="search-icon">🔍</span>
         <input type="text" id="search-input" class="search-input" placeholder="Cerca elemento, negozio, colore, note..." autocomplete="off">
         <button id="search-clear-btn" class="search-clear">✕</button>
       </div>
 
-      <!-- Room Filter Pills -->
       <div class="filter-pills-row" id="room-pills-container">
         <button class="filter-pill active" data-room="all">Tutte le stanze</button>
         <button class="filter-pill" data-room="salone">🛋️ Salone</button>
@@ -163,9 +183,8 @@
         <button class="filter-pill" data-room="altro">📦 Altro</button>
       </div>
 
-      <!-- Secondary Filters: Stato, Negozio (CON BRICODEPOT PRIMO), Pagamento -->
       <div class="filter-controls-row">
-        <!-- Store Filter (Brico Depôt primo, Leroy Merlin secondo, IKEA terzo) -->
+        <!-- Negozi con Brico Depôt primo -->
         <select id="filter-store" class="select-control">
           <option value="all">Tutti i negozi</option>
           <option value="Brico Depôt">🔴 Brico Depôt</option>
@@ -179,7 +198,6 @@
           <option value="Altro">Altro negozio</option>
         </select>
 
-        <!-- Payment Filter -->
         <select id="filter-payment" class="select-control">
           <option value="all">Tutti i pagamenti</option>
           <option value="financed">💳 Finanziato</option>
@@ -187,7 +205,6 @@
           <option value="to_pay">⏳ Da Pagare Cash</option>
         </select>
 
-        <!-- Status Filter -->
         <select id="filter-status" class="select-control">
           <option value="all">Tutti gli stati</option>
           <option value="pending">⏳ Da comprare</option>
@@ -195,7 +212,6 @@
           <option value="bought">✅ Già comprati</option>
         </select>
 
-        <!-- Sort Select -->
         <select id="sort-items" class="select-control">
           <option value="priority-desc">Priorità (Alta prima)</option>
           <option value="price-asc">Prezzo (crescente)</option>
@@ -206,7 +222,7 @@
       </div>
     </section>
 
-    <!-- 5. FILTRI SEMPLIFICATI PER LAVORI -->
+    <!-- 5. FILTRI LAVORI -->
     <section class="search-filter-card" id="filters-works-section" style="display: none;">
       <div class="search-box">
         <span class="search-icon">🔍</span>
@@ -228,15 +244,20 @@
       </div>
     </section>
 
-    <!-- 6. LISTA MATERIALI -->
-    <section id="items-list-container" class="items-container">
-      <!-- Injected via JS -->
+    <!-- 6. FILTRI FINANZIAMENTI -->
+    <section class="search-filter-card" id="filters-financings-section" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.88rem; font-weight: 600; color: var(--text-main);">Piani di Rateizzazione & Finanziamenti</span>
+        <button id="btn-create-fin-top" class="btn btn-purple" style="font-size: 0.82rem; padding: 6px 12px;">
+          ➕ Nuovo Finanziamento
+        </button>
+      </div>
     </section>
 
-    <!-- 7. LISTA LAVORI -->
-    <section id="works-list-container" class="items-container" style="display: none;">
-      <!-- Injected via JS -->
-    </section>
+    <!-- 7. LISTE DINAMICHE -->
+    <section id="items-list-container" class="items-container"></section>
+    <section id="works-list-container" class="items-container" style="display: none;"></section>
+    <section id="financings-list-container" class="items-container" style="display: none;"></section>
 
   </main>
 
@@ -256,13 +277,11 @@
         <form id="form-item" autocomplete="off">
           <input type="hidden" id="item-id">
           
-          <!-- Nome Oggetto -->
           <div class="form-group">
             <label class="form-label" for="item-name">Cosa devi comprare? *</label>
             <input type="text" id="item-name" class="form-input" placeholder="Es. Battiscopa rovere, Box doccia, Mobile lavabo, Divano letto..." required>
           </div>
 
-          <!-- Stanza & Negozio (Brico Depôt primo) -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="item-room">Destinato a (Stanza)</label>
@@ -279,7 +298,7 @@
             
             <div class="form-group">
               <label class="form-label" for="item-store">Negozio</label>
-              <input type="text" id="item-store" class="form-input" list="store-suggestions" placeholder="Seleziona o scrivi...">
+              <input type="text" id="item-store" class="form-input" list="store-suggestions" placeholder="Brico Depôt, Leroy Merlin, IKEA...">
               <datalist id="store-suggestions">
                 <option value="Brico Depôt">
                 <option value="Leroy Merlin">
@@ -293,7 +312,6 @@
             </div>
           </div>
 
-          <!-- Prezzo & Quantità -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="item-price">Prezzo visto (€)</label>
@@ -305,7 +323,7 @@
             </div>
           </div>
 
-          <!-- Metodo Pagamento (Cash o Finanziato) -->
+          <!-- Modalità Pagamento & Associazione Finanziamento -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="item-payment-status">Modalità Pagamento</label>
@@ -315,13 +333,15 @@
                 <option value="financed">💳 Finanziato (a rate)</option>
               </select>
             </div>
-            <div class="form-group" id="group-financed-details">
-              <label class="form-label" for="item-financed-details">Dettaglio Rate (se finanziato)</label>
-              <input type="text" id="item-financed-details" class="form-input" placeholder="Es. 10 rate da 49,90€, Tasso 0...">
+
+            <div class="form-group" id="group-select-financing" style="display: none;">
+              <label class="form-label" for="item-financing-select">Associa a Finanziamento</label>
+              <select id="item-financing-select" class="form-select">
+                <!-- Populated dynamically -->
+              </select>
             </div>
           </div>
 
-          <!-- Dimensioni & Colore -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="item-dimensions">Dimensioni</label>
@@ -333,7 +353,6 @@
             </div>
           </div>
 
-          <!-- Priorità & Stato -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="item-priority">Priorità</label>
@@ -353,13 +372,11 @@
             </div>
           </div>
 
-          <!-- Link prodotto -->
           <div class="form-group">
             <label class="form-label" for="item-link">Link al prodotto (URL)</label>
             <input type="url" id="item-link" class="form-input" placeholder="https://www.bricodepot.es/... o leroymerlin.es/...">
           </div>
 
-          <!-- Note -->
           <div class="form-group">
             <label class="form-label" for="item-notes">Note aggiuntive</label>
             <textarea id="item-notes" class="form-textarea" rows="2" placeholder="Codice articolo, misure prese, dettagli consegna..."></textarea>
@@ -384,19 +401,16 @@
         <form id="form-work" autocomplete="off">
           <input type="hidden" id="work-id">
 
-          <!-- Titolo Lavoro -->
           <div class="form-group">
             <label class="form-label" for="work-title">Descrizione del Lavoro *</label>
             <input type="text" id="work-title" class="form-input" placeholder="Es. Installazione cucina, Collocazione battiscopa, Montaggio water e bidet..." required>
           </div>
 
-          <!-- Professionista / Impresa -->
           <div class="form-group">
             <label class="form-label" for="work-worker">Professionista / Impresa incaricata</label>
             <input type="text" id="work-worker" class="form-input" placeholder="Es. Muratore Juan, Idraulico Carlos, Squadra IKEA, Elettricista...">
           </div>
 
-          <!-- Prezzo Concordato & Acconto Già Pagato -->
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="work-total-price">Prezzo Concordato (€) *</label>
@@ -408,13 +422,11 @@
             </div>
           </div>
 
-          <!-- Calcolo automatico residuo dovuto in tempo reale -->
           <div style="background: var(--bg-subtle); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center;">
             <span style="color: var(--text-muted); font-weight: 600;">Residuo Dovuto a Saldo:</span>
             <span id="work-live-due" style="font-size: 1.15rem; font-weight: 800; color: var(--danger);">0 €</span>
           </div>
 
-          <!-- Stato Lavoro -->
           <div class="form-group">
             <label class="form-label" for="work-status">Stato di avanzamento</label>
             <select id="work-status" class="form-select">
@@ -424,7 +436,6 @@
             </select>
           </div>
 
-          <!-- Note Lavoro -->
           <div class="form-group">
             <label class="form-label" for="work-notes">Note / Accordi presi</label>
             <textarea id="work-notes" class="form-textarea" rows="2" placeholder="Data inizio concordata, materiale fornito da noi, compreso montaggio cappa..."></textarea>
@@ -434,6 +445,87 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" id="btn-cancel-work">Annulla</button>
         <button type="submit" form="form-work" class="btn btn-primary" id="btn-save-work">Salva Lavoro</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AGGIUNGI / MODIFICA PIANO FINANZIAMENTO -->
+  <div id="modal-financing" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-fin-title" class="modal-title">Piano di Finanziamento</h3>
+        <button class="btn-close-modal" id="btn-close-fin-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-financing" autocomplete="off">
+          <input type="hidden" id="fin-id">
+
+          <div class="form-group">
+            <label class="form-label" for="fin-name">Nome Finanziamento / Istituto *</label>
+            <input type="text" id="fin-name" class="form-input" placeholder="Es. Findomestic IKEA, Santander Cucina, Brico Depôt Tasso 0..." required>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="fin-amount">Capitale Finanziato (€) *</label>
+              <input type="number" id="fin-amount" class="form-input" placeholder="0.00" step="1" min="0" required>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="fin-installments">Numero di Rate (Mesi)</label>
+              <select id="fin-installments" class="form-select">
+                <option value="6">6 rate (6 mesi)</option>
+                <option value="10" selected>10 rate (10 mesi)</option>
+                <option value="12">12 rate (1 anno)</option>
+                <option value="18">18 rate (1 anno e mezzo)</option>
+                <option value="24">24 rate (2 anni)</option>
+                <option value="36">36 rate (3 anni)</option>
+                <option value="48">48 rate (4 anni)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tipo e Valore Interessi -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="fin-interest-type">Tipo di Interessi</label>
+              <select id="fin-interest-type" class="form-select">
+                <option value="zero" selected>Tasso 0% (Senza interessi)</option>
+                <option value="percent">Percentuale TAN / Interessi (%)</option>
+                <option value="fixed">Spese fisse / Quota istruttoria (€)</option>
+              </select>
+            </div>
+            <div class="form-group" id="group-fin-interest-val" style="display: none;">
+              <label class="form-label" for="fin-interest-val" id="lbl-fin-interest-val">Interessi (%)</label>
+              <input type="number" id="fin-interest-val" class="form-input" placeholder="0" step="0.1" min="0" value="0">
+            </div>
+          </div>
+
+          <!-- CALCOLO ANTEPRIMA IN TEMPO REALE -->
+          <div style="background: #FAF5FF; border: 1px solid #E9D5FF; padding: 12px 14px; border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.85rem; color: #7E22CE; font-weight: 700;">Quota Rata Mensile:</span>
+              <span id="fin-preview-monthly" style="font-size: 1.35rem; font-weight: 800; color: #581C87;">0,00 € / mese</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.78rem; color: #6B21A8;">
+              <span>Interessi Totali: <strong id="fin-preview-interests">0 €</strong></span>
+              <span>Totale con Interessi: <strong id="fin-preview-total">0 €</strong></span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="fin-start-date">Data Prima Rata / Scadenza (Opzionale)</label>
+            <input type="text" id="fin-start-date" class="form-input" placeholder="Es. Dicembre 2026, oppure il 5 di ogni mese">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="fin-notes">Note aggiuntive</label>
+            <textarea id="fin-notes" class="form-textarea" rows="2" placeholder="Banca, IBAN collegato, numero pratica..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-fin">Annulla</button>
+        <button type="submit" form="form-financing" class="btn btn-purple" id="btn-save-fin">Salva Finanziamento</button>
       </div>
     </div>
   </div>
@@ -471,18 +563,18 @@
       </div>
       <div class="modal-body">
         <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: var(--radius-sm); padding: 12px; font-size: 0.85rem; color: #065F46;">
-          <strong>✅ Sincronizzazione Attiva!</strong><br>
-          L'app è collegata direttamente al tuo script Google. Qualsiasi modifica su materiali o lavori viene salvata sia sul cellulare sia nel tuo Google Sheet in tempo reale.
+          <strong>✅ Sincronizzazione in Tempo Reale Attiva</strong><br>
+          L'app si aggiorna automaticamente ogni pochi secondi sia sul cellulare sia sul PC quando sono aperti.
         </div>
 
-        <div class="form-group" style="margin-top: 8px;">
+        <div class="form-group" style="margin-top: 10px;">
           <label class="form-label" for="sync-script-url">URL Web App Google Apps Script</label>
           <input type="url" id="sync-script-url" class="form-input" readonly value="https://script.google.com/macros/s/AKfycbxA6uG7zWv4GIJPiy5YTBuCmgWo0baDoi01cG5k3zpVpHkgTlNzJQ9O9Blt9yEERg-Khg/exec">
         </div>
 
         <div style="display: flex; gap: 8px;">
           <button id="btn-force-sync" class="btn btn-primary" style="flex: 1;">
-            🔄 Sincronizza Ora Manualmente
+            🔄 Sincronizza Ora (Forza Aggiornamento)
           </button>
         </div>
 
@@ -501,7 +593,6 @@
           </div>
         </div>
 
-        <!-- iOS install helper -->
         <div id="ios-helper" class="ios-install-box" style="display: none;">
           <strong>📲 Come installare su iPhone (Safari):</strong>
           <div>1. Tocca il tasto <strong>Condividi</strong> in basso (icona con il quadrato e la freccia in su).</div>
@@ -523,7 +614,7 @@
       </div>
       <div class="modal-body">
         <p style="font-size: 0.88rem; color: var(--text-muted);">
-          Invia il riepilogo contabile completo di materiali (Brico Depôt, Leroy Merlin, IKEA...) e dei lavori di manodopera su WhatsApp.
+          Invia il riepilogo contabile completo di materiali (Brico Depôt, Leroy Merlin, IKEA...), dei lavori e dei piani di finanziamento su WhatsApp.
         </p>
 
         <button id="btn-share-whatsapp" class="btn btn-success" style="width: 100%; padding: 12px; font-size: 1rem;">
