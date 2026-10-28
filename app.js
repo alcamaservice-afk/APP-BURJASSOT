@@ -27,6 +27,8 @@
   let currentFilterStatus = 'all';
   let currentFilterStore = 'all';
   let currentFilterPayment = 'all';
+  let currentFilterPriority = 'all';
+  let currentFilterPriceRange = 'all';
   let currentSearchQuery = '';
   let currentSort = 'priority-desc';
 
@@ -34,6 +36,8 @@
   let currentWorksSearchQuery = '';
   let currentWorksStatus = 'all';
   let currentWorksDue = 'all';
+  let currentWorksWorker = 'all';
+  let currentWorksSort = 'due-desc';
 
   // Stato sincronizzazione e UI
   let isPushing = false;
@@ -101,14 +105,20 @@
     roomPills: document.querySelectorAll('#room-pills-container .filter-pill'),
     filterStore: document.getElementById('filter-store'),
     filterPayment: document.getElementById('filter-payment'),
+    filterPriority: document.getElementById('filter-priority'),
+    filterPriceRange: document.getElementById('filter-price-range'),
     filterStatus: document.getElementById('filter-status'),
     sortItems: document.getElementById('sort-items'),
+    btnResetFiltersMat: document.getElementById('btn-reset-filters-mat'),
 
     // Filtri Lavori
     searchWorksInput: document.getElementById('search-works-input'),
     searchWorksClearBtn: document.getElementById('search-works-clear-btn'),
     filterWorksStatus: document.getElementById('filter-works-status'),
     filterWorksDue: document.getElementById('filter-works-due'),
+    filterWorksWorker: document.getElementById('filter-works-worker'),
+    sortWorks: document.getElementById('sort-works'),
+    btnResetFiltersWorks: document.getElementById('btn-reset-filters-works'),
 
     // Liste
     itemsContainer: document.getElementById('items-list-container'),
@@ -438,6 +448,8 @@
 
   // --- RENDER GENERALE & CONTABILITÀ ---
   function renderAll() {
+    updateStoreFilterOptions();
+    updateWorkerFilterOptions();
     renderGlobalAccounting();
     if (currentTab === 'materials') {
       renderMaterialsSubmetrics();
@@ -560,17 +572,109 @@
   }
 
   // --- RENDER LISTA MATERIALI ---
+  function updateStoreFilterOptions() {
+    if (!elements.filterStore) return;
+    const currentVal = elements.filterStore.value;
+    const baseStores = ['Brico Depôt', 'Leroy Merlin', 'IKEA', 'Bauhaus', 'Obramat', 'Amazon', 'Conforama', 'Maisons du Monde'];
+    const customStores = new Set();
+    items.forEach(it => {
+      const st = (it.store || '').trim();
+      if (st && !baseStores.some(b => b.toLowerCase() === st.toLowerCase()) && st.toLowerCase() !== 'altro') {
+        customStores.add(st);
+      }
+    });
+
+    let opts = '<option value="all">🏪 Tutti i negozi</option>';
+    opts += '<option value="Brico Depôt">🔴 Brico Depôt</option>';
+    opts += '<option value="Leroy Merlin">Leroy Merlin</option>';
+    opts += '<option value="IKEA">IKEA</option>';
+    opts += '<option value="Bauhaus">Bauhaus</option>';
+    opts += '<option value="Obramat">Obramat / Bricomart</option>';
+    opts += '<option value="Amazon">Amazon</option>';
+    opts += '<option value="Conforama">Conforama</option>';
+    opts += '<option value="Maisons du Monde">Maisons du Monde</option>';
+    Array.from(customStores).sort().forEach(st => {
+      opts += `<option value="${escapeHtml(st)}">${escapeHtml(st)}</option>`;
+    });
+    opts += '<option value="Altro">Altro negozio</option>';
+
+    elements.filterStore.innerHTML = opts;
+    elements.filterStore.value = currentVal || 'all';
+  }
+
+  function updateWorkerFilterOptions() {
+    if (!elements.filterWorksWorker) return;
+    const currentVal = elements.filterWorksWorker.value;
+    const workersSet = new Set();
+    works.forEach(w => {
+      if (w.worker && w.worker.trim()) {
+        workersSet.add(w.worker.trim());
+      }
+    });
+
+    let opts = '<option value="all">👷‍♂️ Tutti i professionisti</option>';
+    Array.from(workersSet).sort().forEach(worker => {
+      opts += `<option value="${escapeHtml(worker)}">${escapeHtml(worker)}</option>`;
+    });
+    elements.filterWorksWorker.innerHTML = opts;
+    if (Array.from(workersSet).includes(currentVal)) {
+      elements.filterWorksWorker.value = currentVal;
+    } else {
+      elements.filterWorksWorker.value = 'all';
+      currentWorksWorker = 'all';
+    }
+  }
+
+  function updateResetButtonsVisibility() {
+    if (elements.btnResetFiltersMat) {
+      const hasActiveMat = (currentFilterRoom !== 'all') || 
+                           (currentFilterStore !== 'all') || 
+                           (currentFilterPayment !== 'all') || 
+                           (currentFilterPriority !== 'all') || 
+                           (currentFilterPriceRange !== 'all') || 
+                           (currentFilterStatus !== 'all') || 
+                           (currentSearchQuery !== '');
+      elements.btnResetFiltersMat.style.display = hasActiveMat ? 'inline-flex' : 'none';
+    }
+
+    if (elements.btnResetFiltersWorks) {
+      const hasActiveWorks = (currentWorksStatus !== 'all') || 
+                             (currentWorksDue !== 'all') || 
+                             (currentWorksWorker !== 'all') || 
+                             (currentWorksSearchQuery !== '');
+      elements.btnResetFiltersWorks.style.display = hasActiveWorks ? 'inline-flex' : 'none';
+    }
+  }
+
   function renderMaterialsList() {
+    updateResetButtonsVisibility();
     let filtered = items.filter(item => {
+      // 1. Stanza / Zona
       if (currentFilterRoom !== 'all') {
         if ((item.room || '').toLowerCase() !== currentFilterRoom.toLowerCase()) return false;
       }
+      // 2. Stato acquisto
       if (currentFilterStatus !== 'all') {
         if (item.status !== currentFilterStatus) return false;
       }
+      // 3. Pagamento
       if (currentFilterPayment !== 'all') {
         if (item.paymentStatus !== currentFilterPayment) return false;
       }
+      // 4. Priorità
+      if (currentFilterPriority !== 'all') {
+        if ((item.priority || '').toLowerCase() !== currentFilterPriority.toLowerCase()) return false;
+      }
+      // 5. Fascia di Prezzo
+      if (currentFilterPriceRange !== 'all') {
+        const itemPrice = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+        if (currentFilterPriceRange === '0-50' && itemPrice > 50) return false;
+        if (currentFilterPriceRange === '50-150' && (itemPrice <= 50 || itemPrice > 150)) return false;
+        if (currentFilterPriceRange === '150-300' && (itemPrice <= 150 || itemPrice > 300)) return false;
+        if (currentFilterPriceRange === '300-600' && (itemPrice <= 300 || itemPrice > 600)) return false;
+        if (currentFilterPriceRange === '600+' && itemPrice <= 600) return false;
+      }
+      // 6. Negozio
       if (currentFilterStore !== 'all') {
         const itemStore = (item.store || '').toLowerCase();
         if (currentFilterStore === 'Altro') {
@@ -580,6 +684,7 @@
           return false;
         }
       }
+      // 7. Ricerca testuale
       if (currentSearchQuery) {
         const full = `${item.name} ${item.store} ${item.room} ${item.color} ${item.dimensions} ${item.financingName} ${item.notes}`.toLowerCase();
         if (!full.includes(currentSearchQuery)) return false;
@@ -587,17 +692,28 @@
       return true;
     });
 
-    // Ordinamento
+    // Ordinamento Materiali
     filtered.sort((a, b) => {
+      const priceA = (Number(a.price) || 0) * (Number(a.quantity) || 1);
+      const priceB = (Number(b.price) || 0) * (Number(b.quantity) || 1);
+
       if (currentSort === 'priority-desc') {
-        const pOrder = { 'Alta': 3, 'Media': 2, 'Bassa': 1 };
-        return (pOrder[b.priority] || 2) - (pOrder[a.priority] || 2);
+        const pOrder = { 'alta': 3, 'media': 2, 'bassa': 1 };
+        const diff = (pOrder[(b.priority || '').toLowerCase()] || 2) - (pOrder[(a.priority || '').toLowerCase()] || 2);
+        if (diff !== 0) return diff;
+        return priceB - priceA;
       }
       if (currentSort === 'price-asc') {
-        return ((a.price || 0) * (a.quantity || 1)) - ((b.price || 0) * (b.quantity || 1));
+        return priceA - priceB;
       }
       if (currentSort === 'price-desc') {
-        return ((b.price || 0) * (b.quantity || 1)) - ((a.price || 0) * (a.quantity || 1));
+        return priceB - priceA;
+      }
+      if (currentSort === 'store-asc') {
+        return (a.store || '').localeCompare(b.store || '', 'it');
+      }
+      if (currentSort === 'room-asc') {
+        return (a.room || '').localeCompare(b.room || '', 'it');
       }
       if (currentSort === 'date-desc') {
         return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
@@ -711,16 +827,61 @@
 
   // --- RENDER LISTA LAVORI ---
   function renderWorksList() {
+    updateResetButtonsVisibility();
     let filtered = works.filter(w => {
+      // 1. Stato avanzamento
       if (currentWorksStatus !== 'all' && w.status !== currentWorksStatus) return false;
-      const dovuto = Math.max(0, (w.totalPrice || 0) - (w.paidAmount || 0));
+
+      // 2. Stato Pagamenti
+      const concordato = Number(w.totalPrice) || 0;
+      const pagato = Number(w.paidAmount) || 0;
+      const dovuto = Math.max(0, concordato - pagato);
+
       if (currentWorksDue === 'with_due' && dovuto <= 0) return false;
+      if (currentWorksDue === 'with_paid' && pagato <= 0) return false;
       if (currentWorksDue === 'fully_paid' && dovuto > 0) return false;
+      if (currentWorksDue === 'zero_paid' && pagato > 0) return false;
+
+      // 3. Professionista / Impresa
+      if (currentWorksWorker !== 'all') {
+        if ((w.worker || '').trim().toLowerCase() !== currentWorksWorker.toLowerCase()) return false;
+      }
+
+      // 4. Ricerca testuale
       if (currentWorksSearchQuery) {
         const full = `${w.title} ${w.worker} ${w.notes}`.toLowerCase();
         if (!full.includes(currentWorksSearchQuery)) return false;
       }
       return true;
+    });
+
+    // Ordinamento Lavori
+    filtered.sort((a, b) => {
+      const concA = Number(a.totalPrice) || 0;
+      const concB = Number(b.totalPrice) || 0;
+      const dovutoA = Math.max(0, concA - (Number(a.paidAmount) || 0));
+      const dovutoB = Math.max(0, concB - (Number(b.paidAmount) || 0));
+
+      if (currentWorksSort === 'due-desc') {
+        return dovutoB - dovutoA;
+      }
+      if (currentWorksSort === 'price-desc') {
+        return concB - concA;
+      }
+      if (currentWorksSort === 'price-asc') {
+        return concA - concB;
+      }
+      if (currentWorksSort === 'status') {
+        const sOrder = { 'in_progress': 1, 'pending': 2, 'completed': 3 };
+        return (sOrder[a.status] || 2) - (sOrder[b.status] || 2);
+      }
+      if (currentWorksSort === 'date-desc') {
+        return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+      }
+      if (currentWorksSort === 'title-asc') {
+        return (a.title || '').localeCompare(b.title || '', 'it');
+      }
+      return 0;
     });
 
     if (filtered.length === 0) {
@@ -1378,6 +1539,20 @@
       renderMaterialsList();
     });
 
+    if (elements.filterPriority) {
+      elements.filterPriority.addEventListener('change', () => {
+        currentFilterPriority = elements.filterPriority.value;
+        renderMaterialsList();
+      });
+    }
+
+    if (elements.filterPriceRange) {
+      elements.filterPriceRange.addEventListener('change', () => {
+        currentFilterPriceRange = elements.filterPriceRange.value;
+        renderMaterialsList();
+      });
+    }
+
     elements.filterStatus.addEventListener('change', () => {
       currentFilterStatus = elements.filterStatus.value;
       renderMaterialsList();
@@ -1387,6 +1562,30 @@
       currentSort = elements.sortItems.value;
       renderMaterialsList();
     });
+
+    if (elements.btnResetFiltersMat) {
+      elements.btnResetFiltersMat.addEventListener('click', () => {
+        currentFilterRoom = 'all';
+        currentFilterStore = 'all';
+        currentFilterPayment = 'all';
+        currentFilterPriority = 'all';
+        currentFilterPriceRange = 'all';
+        currentFilterStatus = 'all';
+        currentSearchQuery = '';
+        elements.searchInput.value = '';
+        elements.searchClearBtn.style.display = 'none';
+        elements.roomPills.forEach(p => {
+          if (p.dataset.room === 'all') p.classList.add('active');
+          else p.classList.remove('active');
+        });
+        if (elements.filterStore) elements.filterStore.value = 'all';
+        if (elements.filterPayment) elements.filterPayment.value = 'all';
+        if (elements.filterPriority) elements.filterPriority.value = 'all';
+        if (elements.filterPriceRange) elements.filterPriceRange.value = 'all';
+        if (elements.filterStatus) elements.filterStatus.value = 'all';
+        renderMaterialsList();
+      });
+    }
 
     // Filtri Lavori
     elements.searchWorksInput.addEventListener('input', () => {
@@ -1411,6 +1610,35 @@
       currentWorksDue = elements.filterWorksDue.value;
       renderWorksList();
     });
+
+    if (elements.filterWorksWorker) {
+      elements.filterWorksWorker.addEventListener('change', () => {
+        currentWorksWorker = elements.filterWorksWorker.value;
+        renderWorksList();
+      });
+    }
+
+    if (elements.sortWorks) {
+      elements.sortWorks.addEventListener('change', () => {
+        currentWorksSort = elements.sortWorks.value;
+        renderWorksList();
+      });
+    }
+
+    if (elements.btnResetFiltersWorks) {
+      elements.btnResetFiltersWorks.addEventListener('click', () => {
+        currentWorksStatus = 'all';
+        currentWorksDue = 'all';
+        currentWorksWorker = 'all';
+        currentWorksSearchQuery = '';
+        elements.searchWorksInput.value = '';
+        elements.searchWorksClearBtn.style.display = 'none';
+        if (elements.filterWorksStatus) elements.filterWorksStatus.value = 'all';
+        if (elements.filterWorksDue) elements.filterWorksDue.value = 'all';
+        if (elements.filterWorksWorker) elements.filterWorksWorker.value = 'all';
+        renderWorksList();
+      });
+    }
 
     // Header Actions
     elements.btnOpenSync.addEventListener('click', () => openModal(elements.modalSync));
@@ -1679,7 +1907,7 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=5.2').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=5.3').then((reg) => {
           reg.update(); // Forza l'aggiornamento immediato del service worker
         }).catch(() => {});
       });

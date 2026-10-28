@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=5.2">
+  <link rel="stylesheet" href="style.css?v=5.3">
   
   <!-- Auto-update Service Worker script -->
   <script>
@@ -42,7 +42,7 @@
       <div class="brand-section">
         <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
         <div>
-          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.2 LIVE</span></h1>
+          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.3 LIVE</span></h1>
           <span class="brand-subtitle" id="header-sync-caption">Sincronizzazione automatica attiva</span>
         </div>
       </div>
@@ -200,9 +200,9 @@
       </div>
 
       <div class="filter-controls-row">
-        <!-- Negozi con Brico Depôt primo -->
-        <select id="filter-store" class="select-control">
-          <option value="all">Tutti i negozi</option>
+        <!-- 1. Negozio (Brico Depôt 1°, Leroy Merlin 2°, IKEA 3°) -->
+        <select id="filter-store" class="select-control" title="Filtra per Negozio">
+          <option value="all">🏪 Tutti i negozi</option>
           <option value="Brico Depôt">🔴 Brico Depôt</option>
           <option value="Leroy Merlin">Leroy Merlin</option>
           <option value="IKEA">IKEA</option>
@@ -214,27 +214,55 @@
           <option value="Altro">Altro negozio</option>
         </select>
 
-        <select id="filter-payment" class="select-control">
-          <option value="all">Tutti i pagamenti</option>
+        <!-- 2. Pagamento (Finanziato, Da pagare cash, Pagato cash) -->
+        <select id="filter-payment" class="select-control" title="Filtra per Pagamento">
+          <option value="all">💳 Tutti i pagamenti</option>
           <option value="financed">💳 Finanziato</option>
-          <option value="paid_cash">💵 Pagato Cash</option>
-          <option value="to_pay">⏳ Da Pagare Cash</option>
+          <option value="to_pay">⏳ Da pagare cash</option>
+          <option value="paid_cash">💵 Già pagato cash</option>
         </select>
 
-        <select id="filter-status" class="select-control">
-          <option value="all">Tutti gli stati</option>
+        <!-- 3. Priorità -->
+        <select id="filter-priority" class="select-control" title="Filtra per Priorità">
+          <option value="all">🏷️ Tutte le priorità</option>
+          <option value="Alta">🔴 Priorità Alta</option>
+          <option value="Media">🟡 Priorità Media</option>
+          <option value="Bassa">🟢 Priorità Bassa</option>
+        </select>
+
+        <!-- 4. Fascia di Prezzo -->
+        <select id="filter-price-range" class="select-control" title="Filtra per Prezzo">
+          <option value="all">💶 Tutti i prezzi</option>
+          <option value="0-50">Fino a 50 €</option>
+          <option value="50-150">50 € - 150 €</option>
+          <option value="150-300">150 € - 300 €</option>
+          <option value="300-600">300 € - 600 €</option>
+          <option value="600+">Oltre 600 €</option>
+        </select>
+
+        <!-- 5. Stato Acquisto -->
+        <select id="filter-status" class="select-control" title="Filtra per Stato">
+          <option value="all">📦 Tutti gli stati</option>
           <option value="pending">⏳ Da comprare</option>
           <option value="evaluating">🤔 In valutazione</option>
           <option value="bought">✅ Già comprati</option>
         </select>
 
-        <select id="sort-items" class="select-control">
-          <option value="priority-desc">Priorità (Alta prima)</option>
-          <option value="price-asc">Prezzo (crescente)</option>
-          <option value="price-desc">Prezzo (decrescente)</option>
-          <option value="date-desc">Più recenti</option>
-          <option value="name-asc">Nome (A - Z)</option>
+        <!-- 6. Ordinamento -->
+        <select id="sort-items" class="select-control" title="Ordina Materiali">
+          <option value="priority-desc">⚡ Ordina: Priorità (Alta prima)</option>
+          <option value="price-asc">💶 Ordina: Prezzo (crescente)</option>
+          <option value="price-desc">💰 Ordina: Prezzo (decrescente)</option>
+          <option value="store-asc">🏪 Ordina: Negozio (A - Z)</option>
+          <option value="room-asc">🚪 Ordina: Stanza / Zona</option>
+          <option value="date-desc">📅 Ordina: Più recenti</option>
+          <option value="name-asc">🔤 Ordina: Nome (A - Z)</option>
         </select>
+
+        <!-- 7. Reset Filtri Materiali -->
+        <button id="btn-reset-filters-mat" class="btn-reset-filters" title="Azzera filtri materiali" style="display: none;">
+          🔄 Azzera filtri
+        </button>
       </div>
     </section>
 
@@ -246,19 +274,45 @@
         <button id="search-works-clear-btn" class="search-clear">✕</button>
       </div>
       <div class="filter-controls-row">
-        <select id="filter-works-status" class="select-control">
-          <option value="all">Tutti gli stati lavoro</option>
+        <!-- 1. Stato avanzamento lavori -->
+        <select id="filter-works-status" class="select-control" title="Filtra per Stato Avanzamento">
+          <option value="all">🔄 Tutti gli stati</option>
           <option value="pending">⏳ Da iniziare</option>
           <option value="in_progress">🔄 In corso</option>
           <option value="completed">✅ Terminato</option>
         </select>
-        <select id="filter-works-due" class="select-control">
-          <option value="all">Tutti i pagamenti</option>
+
+        <!-- 2. Stato pagamenti acconti -->
+        <select id="filter-works-due" class="select-control" title="Filtra per Pagamenti">
+          <option value="all">💰 Tutti i pagamenti</option>
           <option value="with_due">⚠️ Con saldo dovuto</option>
+          <option value="with_paid">💵 Con acconto versato</option>
           <option value="fully_paid">✅ Saldati al 100%</option>
+          <option value="zero_paid">⏳ Nessun acconto (0€)</option>
         </select>
+
+        <!-- 3. Professionista / Impresa -->
+        <select id="filter-works-worker" class="select-control" title="Filtra per Professionista">
+          <option value="all">👷‍♂️ Tutti i professionisti</option>
+        </select>
+
+        <!-- 4. Ordinamento Lavori -->
+        <select id="sort-works" class="select-control" title="Ordina Lavori">
+          <option value="due-desc">⚠️ Ordina: Residuo dovuto (più alto)</option>
+          <option value="price-desc">💰 Ordina: Prezzo concordato (decrescente)</option>
+          <option value="price-asc">💶 Ordina: Prezzo concordato (crescente)</option>
+          <option value="status">🔄 Ordina: Stato avanzamento</option>
+          <option value="date-desc">📅 Ordina: Più recenti</option>
+          <option value="title-asc">🔤 Ordina: Titolo (A - Z)</option>
+        </select>
+
+        <!-- 5. Reset Filtri Lavori -->
+        <button id="btn-reset-filters-works" class="btn-reset-filters" title="Azzera filtri lavori" style="display: none;">
+          🔄 Azzera filtri
+        </button>
       </div>
     </section>
+</section>
 
     <!-- 6. FILTRI FINANZIAMENTI -->
     <section class="search-filter-card" id="filters-financings-section" style="display: none;">
@@ -670,6 +724,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Main JavaScript -->
-  <script src="app.js?v=5.2"></script>
+  <script src="app.js?v=5.3"></script>
 </body>
 </html>

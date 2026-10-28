@@ -1,4 +1,4 @@
-const CACHE_NAME = 'burjassot-app-v5.2';
+const CACHE_NAME = 'burjassot-app-v5.3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
