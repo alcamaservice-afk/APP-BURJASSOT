@@ -16,7 +16,23 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=5.1">
+  
+  <!-- Auto-update Service Worker script -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        for (let reg of regs) { reg.update(); }
+      });
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function() {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
+    }
+  </script>
 </head>
 <body>
 
@@ -26,7 +42,7 @@
       <div class="brand-section">
         <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
         <div>
-          <h1 class="brand-title">Casa Burjassot 🏠</h1>
+          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.1 LIVE</span></h1>
           <span class="brand-subtitle" id="header-sync-caption">Sincronizzazione automatica attiva</span>
         </div>
       </div>
@@ -654,6 +670,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Main JavaScript -->
-  <script src="app.js"></script>
+  <script src="app.js?v=5.1"></script>
 </body>
 </html>

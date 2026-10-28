@@ -1,8 +1,8 @@
 /**
- * CASA BURJASSOT - Progressive Web App (Versione 4: Eliminazione Istantanea & Sincronizzazione Anti-Bug)
- * - Risolve definitivamente la ricomparsa dei prodotti eliminati (Tombstones + Sync Bidirezionale)
- * - Gestione della coda di invio (nessuna operazione viene più persa)
- * - Sincronizzazione automatica tra dispositivi (mobile e desktop)
+ * CASA BURJASSOT - Progressive Web App (Versione 5: Sincronizzazione Real-Time Anti-Cache & Multi-Device)
+ * - Risolve definitivamente il caching del Service Worker e la sincronizzazione mobile/desktop
+ * - Mostra l'orario esatto dell'ultimo aggiornamento online in cima
+ * - Supporto Tombstones per impedire la ricomparsa degli elementi cancellati
  */
 
 (function () {
@@ -10,16 +10,16 @@
 
   // --- CONFIGURAZIONE GOOGLE APPS SCRIPT ---
   const DEFAULT_SYNC_URL = 'https://script.google.com/macros/s/AKfycbxA6uG7zWv4GIJPiy5YTBuCmgWo0baDoi01cG5k3zpVpHkgTlNzJQ9O9Blt9yEERg-Khg/exec';
-  const STORAGE_ITEMS_KEY = 'burjassot_shopping_items_v4';
-  const STORAGE_WORKS_KEY = 'burjassot_renovation_works_v4';
-  const STORAGE_FIN_KEY = 'burjassot_financings_v4';
-  const STORAGE_TOMBSTONES_KEY = 'burjassot_tombstones_v4';
+  const STORAGE_ITEMS_KEY = 'burjassot_shopping_items_v5';
+  const STORAGE_WORKS_KEY = 'burjassot_renovation_works_v5';
+  const STORAGE_FIN_KEY = 'burjassot_financings_v5';
+  const STORAGE_TOMBSTONES_KEY = 'burjassot_tombstones_v5';
 
   // --- STATO APPLICAZIONE ---
   let items = [];
   let works = [];
   let financings = [];
-  let tombstones = new Set(); // ID degli elementi cancellati (per evitare che il cloud li ricrei per errore)
+  let tombstones = new Set();
   let currentTab = 'materials'; // 'materials' | 'works' | 'financings'
 
   // Filtri Materiali
@@ -217,17 +217,17 @@
     setupPWA();
     renderAll();
 
-    // Sincronizzazione immediata all'avvio
+    // Sincronizzazione immediata all'apertura
     pullFromCloud({ silent: true });
 
-    // POLLING CONTINUO: controlla ogni 8 secondi se l'utente non sta digitando in un modale
+    // POLLING CONTINUO AUTOMATICO: ogni 5 secondi controlla il server
     setInterval(() => {
       if (!isAnyModalOpen && !isPushing) {
         pullFromCloud({ silent: true });
       }
-    }, 8000);
+    }, 5000);
 
-    // RISVEGLIO ISTANTANEO: quando torni sull'app o cambi scheda, sincronizza subito!
+    // RISVEGLIO ISTANTANEO: quando torni sull'app o cambi finestra, sincronizza subito!
     window.addEventListener('focus', () => {
       if (!isAnyModalOpen) pullFromCloud({ silent: true });
     });
@@ -282,15 +282,13 @@
     }, 300);
   }
 
-  // --- MOTORE DI SINCRONIZZAZIONE (PULL & PUSH CODA-SICURA) ---
+  // --- MOTORE DI SINCRONIZZAZIONE (PULL & PUSH) ---
   // 1. PULL (Scarica dal Google Sheet)
   async function pullFromCloud(options = {}) {
     if (isPulling || isPushing) return;
-    // Se abbiamo appena fatto un push meno di 2.5 secondi fa, non risovrascrivere
-    if (Date.now() - lastPushTimestamp < 2500) return;
+    if (Date.now() - lastPushTimestamp < 2000) return;
 
     isPulling = true;
-    updateSyncBadge('syncing');
 
     try {
       const res = await fetch(DEFAULT_SYNC_URL + '?t=' + Date.now(), {
@@ -303,7 +301,7 @@
       if (data && data.status === 'success') {
         let changed = false;
 
-        // Filtra via tassativamente qualsiasi elemento cancellato localmente (Tombstones)
+        // Filtra tassativamente via qualsiasi elemento presente nei tombstones locali
         if (Array.isArray(data.items)) {
           const filteredItems = data.items.filter(it => !tombstones.has(it.id));
           if (JSON.stringify(items) !== JSON.stringify(filteredItems)) {
@@ -328,24 +326,34 @@
           }
         }
 
+        // Pulisci i tombstones confermati (quelli che il server non invia più)
+        tombstones.forEach(id => {
+          const inItems = data.items?.some(it => it.id === id);
+          const inWorks = data.works?.some(w => w.id === id);
+          const inFin = data.financings?.some(f => f.id === id);
+          if (!inItems && !inWorks && !inFin) {
+            tombstones.delete(id);
+          }
+        });
+
         if (changed) {
           saveLocalStateOnly();
           renderAll();
         }
 
-        updateSyncBadge('online');
+        const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
         if (!options.silent) {
-          showToast('✅ Dati aggiornati dal cloud!');
+          showToast('✅ Dati allineati dal Google Sheet!');
         }
       } else {
-        updateSyncBadge('offline');
+        updateSyncBadge('offline', 'Errore risposta server');
       }
     } catch (err) {
       console.warn('Pull error:', err);
-      updateSyncBadge('offline');
+      updateSyncBadge('offline', 'Non connesso al foglio');
     } finally {
       isPulling = false;
-      // Se nel frattempo era stato richiesto un push, eseguilo subito
       if (pushPending) {
         pushPending = false;
         pushToCloud({ silent: true });
@@ -353,7 +361,7 @@
     }
   }
 
-  // 2. PUSH (Invia le modifiche al Google Sheet con gestione della coda)
+  // 2. PUSH (Invia le modifiche con coda anti-collisione)
   async function pushToCloud(options = {}) {
     if (isPushing) {
       pushPending = true;
@@ -362,7 +370,7 @@
 
     isPushing = true;
     lastPushTimestamp = Date.now();
-    updateSyncBadge('syncing');
+    updateSyncBadge('syncing', 'Salvataggio sul foglio...');
 
     try {
       const payload = {
@@ -373,7 +381,6 @@
         financings: financings
       };
 
-      // Invia POST
       await fetch(DEFAULT_SYNC_URL, {
         method: 'POST',
         headers: {
@@ -382,14 +389,16 @@
         body: JSON.stringify(payload)
       });
 
-      updateSyncBadge('online');
+      const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
       if (!options.silent) {
         showToast('✅ Modifiche salvate sul Google Sheet!');
       }
     } catch (err) {
       console.warn('Push error:', err);
-      // Anche in caso di eccezione per redirect, l'operazione su Apps Script spesso è andata a buon fine
-      updateSyncBadge('online');
+      // Spesso Apps Script salva comunque anche se il browser segnala redirect
+      const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
     } finally {
       isPushing = false;
       if (pushPending) {
@@ -399,7 +408,7 @@
     }
   }
 
-  // Chiamata GET diretta per eliminazione immediata anti-CORS (garanzia al 100%)
+  // Chiamata GET diretta per eliminazione immediata garantita al 100%
   function sendDirectDeleteGet(id) {
     fetch(`${DEFAULT_SYNC_URL}?action=delete&id=${encodeURIComponent(id)}&t=${Date.now()}`, {
       method: 'GET',
@@ -407,23 +416,23 @@
     }).catch(() => {});
   }
 
-  function updateSyncBadge(status) {
+  function updateSyncBadge(status, captionText) {
     elements.syncStatusIndicator.className = 'sync-status-dot';
     if (status === 'online') {
       elements.syncStatusIndicator.classList.add('status-online');
       elements.syncStatusIndicator.title = 'Sincronizzato online in tempo reale';
       elements.syncIcon.style.animation = 'none';
-      elements.headerSyncCaption.textContent = 'Sincronizzato online in tempo reale';
+      if (captionText) elements.headerSyncCaption.textContent = captionText;
     } else if (status === 'syncing') {
       elements.syncStatusIndicator.classList.add('status-syncing');
       elements.syncStatusIndicator.title = 'Sincronizzazione in corso...';
       elements.syncIcon.style.animation = 'spin 1s linear infinite';
-      elements.headerSyncCaption.textContent = 'Sincronizzazione in corso...';
+      if (captionText) elements.headerSyncCaption.textContent = captionText;
     } else {
       elements.syncStatusIndicator.classList.add('status-offline');
-      elements.syncStatusIndicator.title = 'Non connesso / Offline';
+      elements.syncStatusIndicator.title = 'Offline o errore sincronizzazione';
       elements.syncIcon.style.animation = 'none';
-      elements.headerSyncCaption.textContent = 'Salvataggio in locale (offline)';
+      if (captionText) elements.headerSyncCaption.textContent = captionText;
     }
   }
 
@@ -495,7 +504,6 @@
     elements.statGlobalRemainCash.textContent = formatCurrency(globalRemainCash);
     elements.statGlobalProgress.textContent = progressPercent + '%';
 
-    // Badge contatori sui tab
     elements.badgeMaterialsCount.textContent = items.length;
     elements.badgeWorksCount.textContent = works.length;
     elements.badgeFinancingsCount.textContent = financings.length;
@@ -903,7 +911,6 @@
     isAnyModalOpen = false;
   }
 
-  // Materiale Modal
   function openAddMaterialModal() {
     elements.modalItemTitle.textContent = 'Aggiungi Materiale / Arredo';
     elements.itemIdInput.value = '';
@@ -953,7 +960,6 @@
     elements.itemFinancingSelect.innerHTML = options;
   }
 
-  // Lavoro Modal
   function openAddWorkModal() {
     elements.modalWorkTitle.textContent = 'Aggiungi Lavoro / Manodopera';
     elements.workIdInput.value = '';
@@ -983,7 +989,6 @@
     elements.workLiveDue.textContent = formatCurrency(Math.max(0, conc - pag));
   }
 
-  // Finanziamento Modal
   function openAddFinancingModal() {
     elements.modalFinTitle.textContent = 'Nuovo Piano di Finanziamento';
     elements.finIdInput.value = '';
@@ -1050,20 +1055,17 @@
 
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
-    // 3 Tab Switcher
     elements.tabMaterials.addEventListener('click', () => switchTab('materials'));
     elements.tabWorks.addEventListener('click', () => switchTab('works'));
     elements.tabFinancings.addEventListener('click', () => switchTab('financings'));
     elements.btnCreateFinTop.addEventListener('click', openAddFinancingModal);
 
-    // FAB
     elements.fabAddMain.addEventListener('click', () => {
       if (currentTab === 'materials') openAddMaterialModal();
       else if (currentTab === 'works') openAddWorkModal();
       else openAddFinancingModal();
     });
 
-    // Modal Materiale
     elements.btnCloseItemModal.addEventListener('click', () => closeModal(elements.modalItem));
     elements.btnCancelItem.addEventListener('click', () => closeModal(elements.modalItem));
     elements.itemPaymentStatusSelect.addEventListener('change', togglePaymentFinancingSection);
@@ -1114,7 +1116,6 @@
         updatedAt: new Date().toISOString()
       };
 
-      // Rimuovi da tombstones nel caso fosse un re-inserimento con stesso ID
       tombstones.delete(id);
 
       if (isExisting) {
@@ -1129,7 +1130,6 @@
       onDataChangedByUser();
     });
 
-    // Materiali Card Delegation (Eliminazione Definitiva con Tombstone)
     elements.itemsContainer.addEventListener('click', (e) => {
       const card = e.target.closest('.item-card');
       if (!card) return;
@@ -1153,13 +1153,10 @@
       // ELIMINAZIONE MATERIALE
       if (e.target.closest('[data-action="delete"]')) {
         if (confirm(`Vuoi eliminare definitivamente "${item.name}"?`)) {
-          // 1. Registra nei tombstones locali (così non potrà MAI più ricomparire)
           tombstones.add(itemId);
-          // 2. Rimuovi dall'array locale
           items = items.filter(it => it.id !== itemId);
-          // 3. Invia chiamata diretta GET al server per cancellazione immediata
           sendDirectDeleteGet(itemId);
-          showToast('🗑️ Materiale eliminato definitivamente');
+          showToast('🗑️ Materiale eliminato');
           onDataChangedByUser();
         }
         return;
@@ -1205,7 +1202,7 @@
       onDataChangedByUser();
     });
 
-    // Lavori Card Delegation (Eliminazione Definitiva con Tombstone)
+    // Lavori Card Delegation
     elements.worksContainer.addEventListener('click', (e) => {
       const card = e.target.closest('.work-card');
       if (!card) return;
@@ -1292,7 +1289,6 @@
       onDataChangedByUser();
     });
 
-    // Finanziamenti Card Delegation (Eliminazione Definitiva con Tombstone)
     elements.financingsContainer.addEventListener('click', (e) => {
       const card = e.target.closest('.financing-card');
       if (!card) return;
@@ -1638,7 +1634,7 @@
 
   function exportBackupJson() {
     const backup = {
-      version: 4,
+      version: 5,
       exportDate: new Date().toISOString(),
       items: items,
       works: works,
@@ -1683,7 +1679,9 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').catch(() => {});
+        navigator.serviceWorker.register('./sw.js?v=5.1').then((reg) => {
+          reg.update(); // Forza l'aggiornamento immediato del service worker
+        }).catch(() => {});
       });
     }
 

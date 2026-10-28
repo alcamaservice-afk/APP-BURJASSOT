@@ -1,9 +1,9 @@
-const CACHE_NAME = 'burjassot-app-v1';
+const CACHE_NAME = 'burjassot-app-v5.1';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
+  './style.css?v=5.1',
+  './app.js?v=5.1',
   './manifest.json',
   './favicon.png',
   './apple-touch-icon.png',
@@ -13,23 +13,25 @@ const ASSETS_TO_CACHE = [
   './icons/favicon.png'
 ];
 
-// Install: cache static assets
+// Install: scarica i nuovi file e forza l'attivazione immediata
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// Activate: clean up old caches
+// Activate: cancella tutte le vecchie cache (compresa la v1, v2, v3, v4)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.map((name) => {
-          if (name !== CACHE_NAME) {
-            return caches.delete(name);
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('Rimozione vecchia cache:', key);
+            return caches.delete(key);
           }
         })
       );
@@ -37,50 +39,37 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch: Stale-while-revalidate for local files, Network-first for Google Apps Script
+// Fetch: ignora completamente le chiamate esterne (Google Apps Script)
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
-  // If request is to Google Apps Script or external API, use network only
-  if (requestUrl.hostname.includes('script.google.com') || requestUrl.hostname.includes('script.googleusercontent.com')) {
-    event.respondWith(
-      fetch(event.request).catch(() => {
-        return new Response(JSON.stringify({ error: 'offline', message: 'Sei offline. Modifiche salvate in locale.' }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      })
-    );
+  // FONDAMENTALE: Se la richiesta è verso Google Apps Script o qualsiasi host esterno,
+  // NON intercettarla affatto. Lascia che il browser la gestisca direttamente!
+  if (!event.request.url.startsWith(self.location.origin) ||
+      requestUrl.hostname.includes('script.google.com') ||
+      requestUrl.hostname.includes('script.googleusercontent.com')) {
     return;
   }
 
-  // Cache-first / Stale-while-revalidate for app assets
+  // Network-first per i file dell'app con fallback su cache
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Fetch background update
-        fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
-          }
-        }).catch(() => {});
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((networkResponse) => {
-        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          return networkResponse;
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
         }
-        const responseToCache = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, responseToCache);
-        });
         return networkResponse;
-      }).catch(() => {
-        // Fallback to index if navigating
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
-    })
+      })
+      .catch(() => {
+        return caches.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) return cachedResponse;
+          if (event.request.mode === 'navigate') {
+            return caches.match('./index.html');
+          }
+        });
+      })
   );
 });
