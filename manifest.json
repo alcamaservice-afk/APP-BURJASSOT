@@ -1,0 +1,32 @@
+{
+  "name": "Casa Burjassot - Lista Acquisti & Arredo",
+  "short_name": "Burjassot",
+  "description": "Lista condivisa per arredo, bagno, cucina, battiscopa e acquisti dell'appartamento a Burjassot",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#C85A32",
+  "orientation": "portrait-primary",
+  "lang": "it",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "categories": ["shopping", "lifestyle", "utilities"]
+}

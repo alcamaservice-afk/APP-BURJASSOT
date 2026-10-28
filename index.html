@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Casa Burjassot - Arredo & Acquisti</title>
+  
+  <!-- PWA & Mobile Meta Tags -->
+  <meta name="description" content="Lista condivisa per arredo, bagno, cucina, battiscopa e acquisti dell'appartamento a Burjassot">
+  <meta name="theme-color" content="#C85A32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Burjassot">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- App Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-section">
+        <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
+        <div>
+          <h1 class="brand-title">Casa Burjassot 🏠</h1>
+          <span class="brand-subtitle">Lista Acquisti & Arredo</span>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <!-- Install PWA Button -->
+        <button id="btn-install-header" class="btn-install-header" title="Installa l'app sul telefono">
+          <span>📲</span> Installa
+        </button>
+
+        <!-- Share Button -->
+        <button id="btn-open-share" class="btn-icon-header" title="Condividi la lista">
+          <span>📤</span>
+        </button>
+
+        <!-- Sync Button -->
+        <button id="btn-open-sync" class="btn-icon-header" title="Sincronizzazione Cloud">
+          <span id="sync-icon">🔄</span>
+          <span id="sync-status-indicator" class="sync-status-dot status-local" title="Stato Sincronizzazione"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+    
+    <!-- Metrics Grid -->
+    <section class="metrics-grid">
+      <div class="metric-card accent-budget">
+        <span class="metric-title">Budget Totale</span>
+        <span class="metric-value" id="stat-total-budget">0 €</span>
+        <span class="metric-sub" id="stat-total-items-sub">0 articoli inseriti</span>
+      </div>
+      <div class="metric-card accent-spent">
+        <span class="metric-title">Già Speso</span>
+        <span class="metric-value" id="stat-spent">0 €</span>
+        <span class="metric-sub" id="stat-bought-count">0 articoli comprati</span>
+      </div>
+      <div class="metric-card accent-remain">
+        <span class="metric-title">Da Spendere</span>
+        <span class="metric-value" id="stat-remain">0 €</span>
+        <span class="metric-sub" id="stat-pending-count">0 articoli rimanenti</span>
+      </div>
+      <div class="metric-card accent-items">
+        <span class="metric-title">Completamento</span>
+        <span class="metric-value" id="stat-progress">0%</span>
+        <span class="metric-sub" id="stat-progress-sub">Lista acquisti</span>
+      </div>
+    </section>
+
+    <!-- Search & Filters Card -->
+    <section class="search-filter-card">
+      <!-- Search Input -->
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" class="search-input" placeholder="Cerca elemento, negozio, colore, note..." autocomplete="off">
+        <button id="search-clear-btn" class="search-clear">✕</button>
+      </div>
+
+      <!-- Room Filter Pills -->
+      <div class="filter-pills-row" id="room-pills-container">
+        <button class="filter-pill active" data-room="all">Tutte le stanze</button>
+        <button class="filter-pill" data-room="salone">🛋️ Salone</button>
+        <button class="filter-pill" data-room="cucina">🍳 Cucina</button>
+        <button class="filter-pill" data-room="bagno">🚿 Bagno</button>
+        <button class="filter-pill" data-room="camera">🛏️ Camera da letto</button>
+        <button class="filter-pill" data-room="corridoio">🚪 Corridoio / Battiscopa</button>
+        <button class="filter-pill" data-room="terrazzo">🪴 Terrazzo</button>
+        <button class="filter-pill" data-room="altro">📦 Altro</button>
+      </div>
+
+      <!-- Secondary Filters & Sort -->
+      <div class="filter-controls-row">
+        <!-- Status Filter -->
+        <select id="filter-status" class="select-control">
+          <option value="all">Tutti gli stati</option>
+          <option value="pending">⏳ Da comprare</option>
+          <option value="evaluating">🤔 In valutazione</option>
+          <option value="bought">✅ Già comprati</option>
+        </select>
+
+        <!-- Store Filter -->
+        <select id="filter-store" class="select-control">
+          <option value="all">Tutti i negozi</option>
+          <option value="IKEA">IKEA</option>
+          <option value="Leroy Merlin">Leroy Merlin</option>
+          <option value="Bauhaus">Bauhaus</option>
+          <option value="Obramat">Obramat / Bricomart</option>
+          <option value="Amazon">Amazon</option>
+          <option value="Conforama">Conforama</option>
+          <option value="Altro">Altro negozio</option>
+        </select>
+
+        <!-- Sort Select -->
+        <select id="sort-items" class="select-control">
+          <option value="priority-desc">Priorità (Alta prima)</option>
+          <option value="price-asc">Prezzo (crescente)</option>
+          <option value="price-desc">Prezzo (decrescente)</option>
+          <option value="date-desc">Più recenti</option>
+          <option value="name-asc">Nome (A - Z)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Items List Container -->
+    <section id="items-list-container" class="items-container">
+      <!-- Items dynamically injected via JS -->
+    </section>
+
+  </main>
+
+  <!-- Floating Add Button (FAB) -->
+  <button id="fab-add-item" class="fab-add">
+    <span>➕</span> Aggiungi Elemento
+  </button>
+
+  <!-- Modal: Aggiungi / Modifica Oggetto -->
+  <div id="modal-item" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-item-title" class="modal-title">Aggiungi Nuovo Elemento</h3>
+        <button class="btn-close-modal" id="btn-close-item-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-item" autocomplete="off">
+          <input type="hidden" id="item-id">
+          
+          <!-- Nome Oggetto -->
+          <div class="form-group">
+            <label class="form-label" for="item-name">Cosa devi comprare? *</label>
+            <input type="text" id="item-name" class="form-input" placeholder="Es. Box doccia, Battiscopa rovere, Divano letto 3 posti..." required>
+          </div>
+
+          <!-- Stanza & Negozio -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="item-room">Destinato a (Stanza)</label>
+              <select id="item-room" class="form-select">
+                <option value="salone">🛋️ Salone</option>
+                <option value="cucina">🍳 Cucina</option>
+                <option value="bagno">🚿 Bagno</option>
+                <option value="camera">🛏️ Camera da letto</option>
+                <option value="corridoio">🚪 Corridoio / Battiscopa</option>
+                <option value="terrazzo">🪴 Terrazzo / Balcone</option>
+                <option value="altro">📦 Altro</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label" for="item-store">Negozio</label>
+              <input type="text" id="item-store" class="form-input" list="store-suggestions" placeholder="IKEA, Leroy Merlin, Bauhaus...">
+              <datalist id="store-suggestions">
+                <option value="IKEA">
+                <option value="Leroy Merlin">
+                <option value="Bauhaus">
+                <option value="Obramat / Bricomart">
+                <option value="Amazon">
+                <option value="Conforama">
+                <option value="Maisons du Monde">
+              </datalist>
+            </div>
+          </div>
+
+          <!-- Prezzo & Quantità -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="item-price">Prezzo visto (€)</label>
+              <input type="number" id="item-price" class="form-input" placeholder="0.00" step="0.5" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="item-quantity">Quantità</label>
+              <input type="number" id="item-quantity" class="form-input" value="1" min="1" step="1">
+            </div>
+          </div>
+
+          <!-- Dimensioni & Colore -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="item-dimensions">Dimensioni</label>
+              <input type="text" id="item-dimensions" class="form-input" placeholder="Es. 80x120 cm, 20 mt, H 85...">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="item-color">Colore / Finitura</label>
+              <input type="text" id="item-color" class="form-input" placeholder="Es. Bianco opaco, Rovere naturale, Nero...">
+            </div>
+          </div>
+
+          <!-- Priorità & Stato -->
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="item-priority">Priorità</label>
+              <select id="item-priority" class="form-select">
+                <option value="Alta">🔴 Alta (Urgente)</option>
+                <option value="Media" selected>🟡 Media</option>
+                <option value="Bassa">🟢 Bassa (Quando capita)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="item-status">Stato acquisto</label>
+              <select id="item-status" class="form-select">
+                <option value="pending" selected>⏳ Da comprare</option>
+                <option value="evaluating">🤔 In valutazione</option>
+                <option value="bought">✅ Già comprato</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Link prodotto -->
+          <div class="form-group">
+            <label class="form-label" for="item-link">Link al prodotto (URL)</label>
+            <input type="url" id="item-link" class="form-input" placeholder="https://www.ikea.com/... o leroymerlin.es/...">
+          </div>
+
+          <!-- Note -->
+          <div class="form-group">
+            <label class="form-label" for="item-notes">Note aggiuntive</label>
+            <textarea id="item-notes" class="form-textarea" rows="2" placeholder="Codice articolo, misure da verificare, presa elettrica vicina..."></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="btn-cancel-item">Annulla</button>
+        <button type="submit" form="form-item" class="btn btn-primary" id="btn-save-item">Salva Elemento</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Sincronizzazione Google Apps Script -->
+  <div id="modal-sync" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Sincronizzazione Online ☁️</h3>
+        <button class="btn-close-modal" id="btn-close-sync-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-muted);">
+          Collega la tua app a un Foglio Google tramite Google Apps Script. Tutti i telefoni e computer collegati avranno la stessa lista sempre aggiornata in tempo reale!
+        </p>
+
+        <div class="form-group">
+          <label class="form-label" for="sync-script-url">URL Web App Google Apps Script</label>
+          <input type="url" id="sync-script-url" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+          <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+            Puoi trovare il codice pronto nella cartella <code>google-apps-script/Code.gs</code>.
+          </span>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-test-sync" class="btn btn-primary" style="flex: 1;">
+            💾 Salva & Sincronizza Ora
+          </button>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid var(--border); margin: 6px 0;">
+
+        <div>
+          <h4 style="font-size: 0.9rem; margin-bottom: 8px;">Backup Locale Manuale</h4>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-export-backup" class="btn btn-secondary" style="flex: 1; font-size: 0.8rem;">
+              📥 Esporta JSON
+            </button>
+            <button id="btn-import-backup-trigger" class="btn btn-secondary" style="flex: 1; font-size: 0.8rem;">
+              📤 Carica Backup
+            </button>
+            <input type="file" id="import-backup-file" accept=".json" style="display: none;">
+          </div>
+        </div>
+
+        <!-- iOS install helper in modal -->
+        <div id="ios-helper" class="ios-install-box" style="display: none;">
+          <strong>📲 Come installare su iPhone (Safari):</strong>
+          <div class="ios-step">1. Tocca il tasto <strong>Condividi</strong> in basso (l'icona con il quadrato e la freccia in su).</div>
+          <div class="ios-step">2. Scorri e tocca <strong>"Aggiungi a schermata Home"</strong>.</div>
+          <div class="ios-step">3. Avrai l'icona sul tuo schermo come una vera app!</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-close-sync">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Condivisione -->
+  <div id="modal-share" class="modal-backdrop">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 class="modal-title">Condividi Lista Acquisti 📤</h3>
+        <button class="btn-close-modal" id="btn-close-share-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.88rem; color: var(--text-muted);">
+          Invia velocemente il riepilogo delle cose da comprare per l'appartamento di Burjassot su WhatsApp o esportalo per Excel.
+        </p>
+
+        <button id="btn-share-whatsapp" class="btn btn-success" style="width: 100%; padding: 12px; font-size: 1rem;">
+          💬 Invia su WhatsApp
+        </button>
+
+        <button id="btn-copy-clipboard" class="btn btn-secondary" style="width: 100%;">
+          📋 Copia Testo Lista negli Appunti
+        </button>
+
+        <button id="btn-export-csv" class="btn btn-secondary" style="width: 100%;">
+          📊 Scarica Tabella CSV (Excel)
+        </button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-close-share">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PWA Bottom Banner -->
+  <div id="pwa-install-banner" class="pwa-banner">
+    <div class="pwa-banner-content">
+      <img src="icons/icon-192.png" alt="Burjassot Icon" class="pwa-banner-icon">
+      <div class="pwa-banner-text">
+        <h4>Installa Casa Burjassot</h4>
+        <p>Aggiungi alla schermata home per aprirla con un tap</p>
+      </div>
+    </div>
+    <div class="pwa-banner-actions">
+      <button id="btn-pwa-install" class="btn-pwa-install">Installa</button>
+      <button id="btn-pwa-dismiss" class="btn-pwa-close">✕</button>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Main JavaScript -->
+  <script src="app.js"></script>
+</body>
+</html>
