@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=5.4">
+  <link rel="stylesheet" href="style.css?v=5.5">
   
   <!-- Auto-update Service Worker script -->
   <script>
@@ -42,7 +42,7 @@
       <div class="brand-section">
         <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
         <div>
-          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.4 SICURA</span></h1>
+          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.5 SICURA</span></h1>
           <span class="brand-subtitle" id="header-sync-caption">Sincronizzazione automatica attiva</span>
         </div>
       </div>
@@ -537,8 +537,12 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label" for="fin-amount">Capitale Finanziato (€) *</label>
-              <input type="number" id="fin-amount" class="form-input" placeholder="0.00" step="any" min="0" inputmode="decimal" required>
+              <label class="form-label" for="fin-amount">Capitale Finanziato (€)</label>
+              <input type="number" id="fin-amount" class="form-input" placeholder="0.00" step="any" min="0" inputmode="decimal">
+              <label style="display:flex; align-items:center; gap:6px; font-size:0.78rem; font-weight:600; color:#6B21A8; margin-top:4px; cursor:pointer;">
+                <input type="checkbox" id="fin-auto-capital" checked style="width:auto; margin:0;"> Automatico (somma degli articoli)
+              </label>
+              <span id="fin-amount-hint" style="font-size:0.72rem; color:var(--text-muted);"></span>
             </div>
             <div class="form-group">
               <label class="form-label" for="fin-installments">Numero di Rate (Mesi)</label>
@@ -724,6 +728,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Main JavaScript -->
-  <script src="app.js?v=5.4"></script>
+  <script src="app.js?v=5.5"></script>
 </body>
 </html>

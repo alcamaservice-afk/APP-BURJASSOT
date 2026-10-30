@@ -1,5 +1,5 @@
 /**
- * CASA BURJASSOT - Progressive Web App (Versione 5.4: sincronizzazione SICURA, a prova di perdita dati)
+ * CASA BURJASSOT - Progressive Web App (Versione 5.5: sincronizzazione SICURA + finanziamenti automatici, a prova di perdita dati)
  * - Il telefono UNISCE i dati del foglio ai propri (vince la modifica piu' recente), non li sostituisce mai
  * - Un telefono con dati vuoti/vecchi non puo' piu' cancellare la lista degli altri
  * - Se il foglio ha perso dati che un telefono possiede ancora, il telefono li rimanda al foglio (auto-guarigione)
@@ -184,6 +184,8 @@
     finIdInput: document.getElementById('fin-id'),
     finNameInput: document.getElementById('fin-name'),
     finAmountInput: document.getElementById('fin-amount'),
+    finAutoCapital: document.getElementById('fin-auto-capital'),
+    finAmountHint: document.getElementById('fin-amount-hint'),
     finInstallmentsSelect: document.getElementById('fin-installments'),
     finInterestTypeSelect: document.getElementById('fin-interest-type'),
     groupFinInterestVal: document.getElementById('group-fin-interest-val'),
@@ -309,6 +311,7 @@
   function onDataChangedByUser() {
     changeCounter++;
     setDirty(true);
+    syncFinancingTotals();   // capitale / rata dei finanziamenti sempre allineati agli articoli
     saveLocalStateOnly();
     renderAll();
     triggerSyncPush();
@@ -531,6 +534,49 @@
     }
   }
 
+  // --- CALCOLO AUTOMATICO FINANZIAMENTI ---
+  // Capitale = somma (prezzo x quantita') degli articoli "Finanziati" collegati al piano.
+  // Interessi, totale e rata si ricalcolano da quel capitale. Se "capitale automatico" e' spento
+  // (o il piano e' vecchio e senza articoli) si usa l'importo scritto a mano.
+  const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+
+  function calcFinancing(fin) {
+    const linked = items.filter(it => it.financingId === fin.id && it.paymentStatus === 'financed');
+    const linkedSum = linked.reduce((a, it) => a + (Number(it.price) || 0) * (Number(it.quantity) || 1), 0);
+    const auto = fin.autoCapital === undefined ? linked.length > 0 : !!fin.autoCapital;
+    const capital = auto ? linkedSum : (Number(fin.totalAmount) || 0);
+    const rateCount = Number(fin.installmentsCount) || 10;
+    const iv = Number(fin.interestValue) || 0;
+    let interests = 0;
+    if (fin.interestType === 'percent') interests = capital * (iv / 100);
+    else if (fin.interestType === 'fixed') interests = iv;
+    const total = capital + interests;
+    const monthly = rateCount > 0 ? total / rateCount : 0;
+    return { capital, interests, total, monthly, rateCount, linked, linkedSum, auto };
+  }
+
+  // Tiene allineati anche i valori salvati (e quindi il foglio Google) dopo ogni modifica dell'utente
+  function syncFinancingTotals() {
+    let touched = false;
+    financings.forEach(f => {
+      const c = calcFinancing(f);
+      let changed = false;
+      if (f.autoCapital === undefined && c.auto) { f.autoCapital = true; changed = true; }
+      if (c.auto) {
+        if (Math.abs((Number(f.totalAmount) || 0) - c.capital) > 0.005 ||
+            Math.abs((Number(f.totalWithInterest) || 0) - c.total) > 0.005 ||
+            Math.abs((Number(f.monthlyInstallment) || 0) - c.monthly) > 0.005) {
+          f.totalAmount = round2(c.capital);
+          f.totalWithInterest = round2(c.total);
+          f.monthlyInstallment = round2(c.monthly);
+          changed = true;
+        }
+      }
+      if (changed) { f.updatedAt = new Date().toISOString(); touched = true; }
+    });
+    return touched;
+  }
+
   // 1. QUADRO GLOBALE
   function renderGlobalAccounting() {
     let matTotal = 0;
@@ -565,8 +611,9 @@
     let totalMonthlyRates = 0;
     let totalFinancedCapital = 0;
     financings.forEach(f => {
-      totalMonthlyRates += Number(f.monthlyInstallment) || 0;
-      totalFinancedCapital += Number(f.totalAmount) || 0;
+      const c = calcFinancing(f);
+      totalMonthlyRates += c.monthly;
+      totalFinancedCapital += c.capital;
     });
 
     const displayedFinanced = Math.max(matFinanced, totalFinancedCapital);
@@ -626,11 +673,10 @@
   function renderFinancingsSubmetrics() {
     let finTotal = 0, monthlyTotal = 0, interestTotal = 0;
     financings.forEach(f => {
-      const cap = Number(f.totalAmount) || 0;
-      const totWithInt = Number(f.totalWithInterest) || cap;
-      finTotal += cap;
-      monthlyTotal += Number(f.monthlyInstallment) || 0;
-      interestTotal += Math.max(0, totWithInt - cap);
+      const c = calcFinancing(f);
+      finTotal += c.capital;
+      monthlyTotal += c.monthly;
+      interestTotal += Math.max(0, c.total - c.capital);
     });
 
     elements.statFinTotal.textContent = formatCurrency(finTotal);
@@ -1054,14 +1100,15 @@
 
     let html = '';
     financings.forEach(fin => {
-      const cap = Number(fin.totalAmount) || 0;
-      const rateCount = Number(fin.installmentsCount) || 10;
-      const monthly = Number(fin.monthlyInstallment) || (cap / rateCount);
-      const totalWithInt = Number(fin.totalWithInterest) || cap;
+      const calc = calcFinancing(fin);
+      const cap = calc.capital;
+      const rateCount = calc.rateCount;
+      const monthly = calc.monthly;
+      const totalWithInt = calc.total;
       const interests = Math.max(0, totalWithInt - cap);
 
-      const linkedItems = items.filter(it => it.financingId === fin.id);
-      const linkedSum = linkedItems.reduce((acc, it) => acc + ((it.price || 0) * (it.quantity || 1)), 0);
+      const linkedItems = calc.linked;
+      const linkedSum = calc.linkedSum;
 
       html += `
         <article class="financing-card" data-id="${fin.id}">
@@ -1079,6 +1126,7 @@
             <div class="fin-stat-col">
               <span class="fin-stat-label">Capitale</span>
               <span class="fin-stat-val">${formatCurrency(cap)}</span>
+              <span style="font-size:0.68rem; color:#7E22CE;">${calc.auto ? '🔄 automatico' : '✍️ manuale'}</span>
             </div>
             <div class="fin-stat-col">
               <span class="fin-stat-label">Rata Mensile</span>
@@ -1183,7 +1231,7 @@
     let options = '<option value="">-- Seleziona Finanziamento --</option>';
     financings.forEach(f => {
       const isSel = f.id === selectedFinId ? 'selected' : '';
-      options += `<option value="${f.id}" ${isSel}>${escapeHtml(f.name)} (${f.installmentsCount} rate da ${formatCurrency(f.monthlyInstallment)}/m)</option>`;
+      options += `<option value="${f.id}" ${isSel}>${escapeHtml(f.name)} (${calcFinancing(f).rateCount} rate da ${formatCurrency(calcFinancing(f).monthly)}/m)</option>`;
     });
     options += '<option value="__create_new__">➕ Crea Nuovo Finanziamento...</option>';
     elements.itemFinancingSelect.innerHTML = options;
@@ -1218,14 +1266,38 @@
     elements.workLiveDue.textContent = formatCurrency(Math.max(0, conc - pag));
   }
 
-  function openAddFinancingModal() {
+  // Imposta il campo "Capitale" in base alla casella "Automatico"
+  function applyFinAmountMode(fin, previewSum) {
+    const auto = elements.finAutoCapital.checked;
+    const el = elements.finAmountInput;
+    if (auto) {
+      const calc = fin ? calcFinancing(Object.assign({}, fin, { autoCapital: true })) : null;
+      const sum = fin ? calc.linkedSum : (Number(previewSum) || 0);
+      el.value = String(round2(sum));
+      el.readOnly = true;
+      el.style.background = '#F1F5F9';
+      elements.finAmountHint.textContent = fin
+        ? `Somma di ${calc.linked.length} articoli collegati. Si aggiorna da sola quando aggiungi o togli articoli.`
+        : (sum > 0 ? "Include l'articolo che stai inserendo. Si aggiornerà da sola con gli articoli collegati."
+                   : 'Si calcolerà da sola quando collegherai degli articoli a questo finanziamento.');
+    } else {
+      el.readOnly = false;
+      el.style.background = '';
+      elements.finAmountHint.textContent = 'Importo inserito a mano.';
+    }
+    updateLiveFinancingCalculation();
+  }
+
+  function openAddFinancingModal(previewSum) {
     elements.modalFinTitle.textContent = 'Nuovo Piano di Finanziamento';
     elements.finIdInput.value = '';
     elements.formFinancing.reset();
     elements.finInstallmentsSelect.value = '10';
     elements.finInterestTypeSelect.value = 'zero';
     elements.finInterestValInput.value = '0';
+    elements.finAutoCapital.checked = true;
     toggleInterestInput();
+    applyFinAmountMode(null, typeof previewSum === 'number' ? previewSum : 0);
     updateLiveFinancingCalculation();
     openModal(elements.modalFinancing);
     setTimeout(() => elements.finNameInput.focus(), 150);
@@ -1235,6 +1307,7 @@
     elements.modalFinTitle.textContent = 'Modifica Piano di Finanziamento';
     elements.finIdInput.value = fin.id;
     elements.finNameInput.value = fin.name || '';
+    elements.finAutoCapital.checked = calcFinancing(fin).auto;
     elements.finAmountInput.value = fin.totalAmount || '';
     elements.finInstallmentsSelect.value = String(fin.installmentsCount || 10);
     elements.finInterestTypeSelect.value = fin.interestType || 'zero';
@@ -1242,6 +1315,7 @@
     elements.finStartDateInput.value = fin.startDate || '';
     elements.finNotesInput.value = fin.notes || '';
     toggleInterestInput();
+    applyFinAmountMode(fin);
     updateLiveFinancingCalculation();
     openModal(elements.modalFinancing);
   }
@@ -1302,11 +1376,7 @@
     elements.itemFinancingSelect.addEventListener('change', () => {
       if (elements.itemFinancingSelect.value === '__create_new__') {
         const itemPrice = parsePrice(elements.itemPriceInput.value) * (parseInt(elements.itemQuantityInput.value, 10) || 1);
-        openAddFinancingModal();
-        if (itemPrice > 0) {
-          elements.finAmountInput.value = itemPrice;
-          updateLiveFinancingCalculation();
-        }
+        openAddFinancingModal(itemPrice);
       }
     });
 
@@ -1463,6 +1533,11 @@
     elements.btnCloseFinModal.addEventListener('click', () => closeModal(elements.modalFinancing));
     elements.btnCancelFin.addEventListener('click', () => closeModal(elements.modalFinancing));
     elements.finAmountInput.addEventListener('input', updateLiveFinancingCalculation);
+    elements.finAutoCapital.addEventListener('change', () => {
+      const cur = financings.find(f => f.id === elements.finIdInput.value);
+      if (!elements.finAutoCapital.checked && cur) elements.finAmountInput.value = round2(calcFinancing(cur).capital);
+      applyFinAmountMode(cur || null, elements.finAmountInput.value);
+    });
     elements.finInstallmentsSelect.addEventListener('change', updateLiveFinancingCalculation);
     elements.finInterestTypeSelect.addEventListener('change', () => {
       toggleInterestInput();
@@ -1475,7 +1550,11 @@
       const id = elements.finIdInput.value || 'fin-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
       const isExisting = financings.some(f => f.id === id);
 
-      const amount = parsePrice(elements.finAmountInput.value);
+      const autoCapital = elements.finAutoCapital.checked;
+      const existingFin = financings.find(f => f.id === id);
+      const amount = (autoCapital && existingFin)
+        ? calcFinancing(Object.assign({}, existingFin, { autoCapital: true })).linkedSum
+        : parsePrice(elements.finAmountInput.value);
       const rateCount = parseInt(elements.finInstallmentsSelect.value, 10) || 10;
       const interestType = elements.finInterestTypeSelect.value;
       const interestVal = parsePrice(elements.finInterestValInput.value);
@@ -1490,6 +1569,7 @@
       const newFin = {
         id: id,
         name: elements.finNameInput.value.trim(),
+        autoCapital: autoCapital,
         totalAmount: amount,
         installmentsCount: rateCount,
         interestType: interestType,
@@ -1515,6 +1595,12 @@
       }
 
       closeModal(elements.modalFinancing);
+      // Se il piano e' stato creato mentre si compilava un materiale, lo seleziona subito in quel modulo
+      if (elements.modalItem.classList.contains('is-open')) {
+        isAnyModalOpen = true;
+        document.body.style.overflow = 'hidden';
+        populateFinancingDropdown(id);
+      }
       onDataChangedByUser();
     });
 
@@ -1796,7 +1882,7 @@
 
     let monthlyRateTotal = 0;
     financings.forEach(f => {
-      monthlyRateTotal += Number(f.monthlyInstallment) || 0;
+      monthlyRateTotal += calcFinancing(f).monthly;
     });
 
     const grand = matTotal + worksTotal;
@@ -1812,7 +1898,8 @@
     if (financings.length > 0) {
       text += `💳 *PIANI DI FINANZIAMENTO (${financings.length}):*\n`;
       financings.forEach(f => {
-        text += `• ${f.name}: ${formatCurrency(f.totalAmount)} in ${f.installmentsCount} rate da *${formatCurrency(f.monthlyInstallment)}/mese*\n`;
+        const c = calcFinancing(f);
+        text += `• ${f.name}: ${formatCurrency(c.capital)} in ${c.rateCount} rate da *${formatCurrency(c.monthly)}/mese*\n`;
       });
       text += `\n`;
     }
@@ -1907,14 +1994,15 @@
     csv += '\r\n\r\nSEZIONE PIANI DI FINANZIAMENTO\r\n';
     csv += 'Nome Piano;Capitale;Numero Rate;Tipo Interesse;Valore Interesse;Totale Con Interessi;Rata Mensile;Data Inizio;Note\r\n';
     financings.forEach(f => {
+      const c = calcFinancing(f);
       csv += [
         `"${(f.name || '').replace(/"/g, '""')}"`,
-        f.totalAmount || 0,
-        f.installmentsCount || 10,
+        round2(c.capital),
+        c.rateCount,
         `"${f.interestType || 'zero'}"`,
         f.interestValue || 0,
-        f.totalWithInterest || 0,
-        f.monthlyInstallment || 0,
+        round2(c.total),
+        round2(c.monthly),
         `"${(f.startDate || '').replace(/"/g, '""')}"`,
         `"${(f.notes || '').replace(/"/g, '""')}"`
       ].join(';') + '\r\n';
@@ -1989,7 +2077,7 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=5.4').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=5.5').then((reg) => {
           reg.update(); // Forza l'aggiornamento immediato del service worker
         }).catch(() => {});
       });
