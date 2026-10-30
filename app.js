@@ -1,5 +1,10 @@
 /**
- * CASA BURJASSOT - Progressive Web App (Versione 5: Sincronizzazione Real-Time Anti-Cache & Multi-Device)
+ * CASA BURJASSOT - Progressive Web App (Versione 5.4: sincronizzazione SICURA, a prova di perdita dati)
+ * - Il telefono UNISCE i dati del foglio ai propri (vince la modifica piu' recente), non li sostituisce mai
+ * - Un telefono con dati vuoti/vecchi non puo' piu' cancellare la lista degli altri
+ * - Se il foglio ha perso dati che un telefono possiede ancora, il telefono li rimanda al foglio (auto-guarigione)
+ * - Le modifiche non ancora confermate dal foglio restano "in sospeso" e vengono ritentate
+ * (Versione precedente: Sincronizzazione Real-Time Anti-Cache & Multi-Device)
  * - Risolve definitivamente il caching del Service Worker e la sincronizzazione mobile/desktop
  * - Mostra l'orario esatto dell'ultimo aggiornamento online in cima
  * - Supporto Tombstones per impedire la ricomparsa degli elementi cancellati
@@ -14,12 +19,18 @@
   const STORAGE_WORKS_KEY = 'burjassot_renovation_works_v5';
   const STORAGE_FIN_KEY = 'burjassot_financings_v5';
   const STORAGE_TOMBSTONES_KEY = 'burjassot_tombstones_v5';
+  const STORAGE_DIRTY_KEY = 'burjassot_dirty_v54';
+  const STORAGE_UNDELETE_KEY = 'burjassot_undelete_v54';
 
   // --- STATO APPLICAZIONE ---
   let items = [];
   let works = [];
   let financings = [];
   let tombstones = new Set();
+  let undeleteQueue = new Set();   // ID da togliere dal cestino del foglio (ripristino backup)
+  let dirty = false;               // true = ci sono modifiche locali non ancora confermate dal foglio
+  let changeCounter = 0;
+  let hasPulledOnce = false;       // non si invia nulla al foglio prima di aver letto il foglio almeno una volta
   let currentTab = 'materials'; // 'materials' | 'works' | 'financings'
 
   // Filtri Materiali
@@ -234,6 +245,8 @@
     setInterval(() => {
       if (!isAnyModalOpen && !isPushing) {
         pullFromCloud({ silent: true });
+      } else if (dirty && hasPulledOnce && !isPushing) {
+        pushToCloud({ silent: true });   // modale aperta ma ci sono modifiche in sospeso: salva comunque
       }
     }, 5000);
 
@@ -270,6 +283,20 @@
       const rawT = localStorage.getItem(STORAGE_TOMBSTONES_KEY);
       tombstones = new Set(rawT ? JSON.parse(rawT) : []);
     } catch (e) { tombstones = new Set(); }
+
+    try { dirty = localStorage.getItem(STORAGE_DIRTY_KEY) === '1'; } catch (e) { dirty = false; }
+    try {
+      const rawU = localStorage.getItem(STORAGE_UNDELETE_KEY);
+      undeleteQueue = new Set(rawU ? JSON.parse(rawU) : []);
+    } catch (e) { undeleteQueue = new Set(); }
+  }
+
+  function setDirty(v) {
+    dirty = !!v;
+    try { localStorage.setItem(STORAGE_DIRTY_KEY, dirty ? '1' : '0'); } catch (e) { /* ignore */ }
+  }
+  function saveUndeleteQueue() {
+    try { localStorage.setItem(STORAGE_UNDELETE_KEY, JSON.stringify(Array.from(undeleteQueue))); } catch (e) { /* ignore */ }
   }
 
   function saveLocalStateOnly() {
@@ -280,6 +307,8 @@
   }
 
   function onDataChangedByUser() {
+    changeCounter++;
+    setDirty(true);
     saveLocalStateOnly();
     renderAll();
     triggerSyncPush();
@@ -292,13 +321,42 @@
     }, 300);
   }
 
-  // --- MOTORE DI SINCRONIZZAZIONE (PULL & PUSH) ---
-  // 1. PULL (Scarica dal Google Sheet)
+  // --- MOTORE DI SINCRONIZZAZIONE SICURO (PULL & PUSH) ---
+  // <MERGE-START>
+  function tsOf(o) {
+    const t = Date.parse(o && o.updatedAt);
+    return Number.isFinite(t) ? t : 0;
+  }
+  // Unisce due liste per ID: tiene tutto, e se un elemento esiste in entrambe vince il piu' recente.
+  // Gli ID "bloccati" (cancellati) vengono esclusi. NON elimina mai nulla per il solo fatto che manca.
+  function mergeById(local, remote, blocked) {
+    const out = new Map();
+    (local || []).forEach(o => { if (o && o.id && !blocked.has(o.id)) out.set(o.id, o); });
+    (remote || []).forEach(r => {
+      if (!r || !r.id || blocked.has(r.id)) return;
+      const l = out.get(r.id);
+      if (!l || tsOf(r) > tsOf(l)) out.set(r.id, r);
+    });
+    return Array.from(out.values());
+  }
+  // true se nella lista unita c'e' qualcosa che il foglio non ha, o ha in versione piu' vecchia
+  function needsPushList(merged, remote) {
+    const m = new Map((remote || []).map(r => [r.id, r]));
+    return merged.some(o => { const r = m.get(o.id); return !r || tsOf(o) > tsOf(r); });
+  }
+  // <MERGE-END>
+
+  function timeLabel() {
+    return new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  // 1. PULL (scarica dal Google Sheet e UNISCE ai dati locali)
   async function pullFromCloud(options = {}) {
     if (isPulling || isPushing) return;
     if (Date.now() - lastPushTimestamp < 2000) return;
 
     isPulling = true;
+    let needsPush = false;
 
     try {
       const res = await fetch(DEFAULT_SYNC_URL + '?t=' + Date.now(), {
@@ -311,57 +369,50 @@
       if (data && data.status === 'success') {
         let changed = false;
 
-        // Filtra tassativamente via qualsiasi elemento presente nei tombstones locali
-        if (Array.isArray(data.items)) {
-          const filteredItems = data.items.filter(it => !tombstones.has(it.id));
-          if (JSON.stringify(items) !== JSON.stringify(filteredItems)) {
-            items = filteredItems;
-            changed = true;
-          }
-        }
+        // ID eliminati definitivamente sul foglio (cestino), tranne quelli che sto ripristinando io
+        const serverDeleted = new Set((data.deletedIds || []).map(String));
+        const blocked = new Set(tombstones);
+        serverDeleted.forEach(id => { if (!undeleteQueue.has(id)) blocked.add(id); });
 
-        if (Array.isArray(data.works)) {
-          const filteredWorks = data.works.filter(w => !tombstones.has(w.id));
-          if (JSON.stringify(works) !== JSON.stringify(filteredWorks)) {
-            works = filteredWorks;
-            changed = true;
-          }
-        }
+        const apply = (localArr, remoteArr) => {
+          if (!Array.isArray(remoteArr)) return localArr;
+          const merged = mergeById(localArr, remoteArr, blocked);
+          if (needsPushList(merged, remoteArr)) needsPush = true;
+          if (JSON.stringify(merged) !== JSON.stringify(localArr)) changed = true;
+          return merged;
+        };
+        items = apply(items, data.items);
+        works = apply(works, data.works);
+        financings = apply(financings, data.financings);
 
-        if (Array.isArray(data.financings)) {
-          const filteredFin = data.financings.filter(f => !tombstones.has(f.id));
-          if (JSON.stringify(financings) !== JSON.stringify(filteredFin)) {
-            financings = filteredFin;
-            changed = true;
-          }
-        }
+        // Eliminazioni locali confermate dal foglio: non servono piu'
+        serverDeleted.forEach(id => { if (tombstones.has(id)) tombstones.delete(id); });
+        if (tombstones.size > 0) needsPush = true;       // eliminazione non ancora arrivata al foglio
+        if (undeleteQueue.size > 0) needsPush = true;
 
-        // Pulisci i tombstones confermati (quelli che il server non invia più)
-        tombstones.forEach(id => {
-          const inItems = data.items?.some(it => it.id === id);
-          const inWorks = data.works?.some(w => w.id === id);
-          const inFin = data.financings?.some(f => f.id === id);
-          if (!inItems && !inWorks && !inFin) {
-            tombstones.delete(id);
-          }
-        });
-
+        hasPulledOnce = true;
         if (changed) {
           saveLocalStateOnly();
           renderAll();
         }
 
-        const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
+        if (needsPush) {
+          setDirty(true);
+          pushPending = true;   // viene inviato nel blocco finally
+          updateSyncBadge('syncing', 'Salvataggio sul foglio...');
+        } else {
+          setDirty(false);
+          updateSyncBadge('online', `Sincronizzato alle ${timeLabel()}`);
+        }
         if (!options.silent) {
           showToast('✅ Dati allineati dal Google Sheet!');
         }
       } else {
-        updateSyncBadge('offline', 'Errore risposta server');
+        updateSyncBadge('offline', dirty ? '⚠️ Modifiche non ancora salvate sul foglio' : 'Errore risposta server');
       }
     } catch (err) {
       console.warn('Pull error:', err);
-      updateSyncBadge('offline', 'Non connesso al foglio');
+      updateSyncBadge('offline', dirty ? '⚠️ Offline: modifiche salvate sul telefono, in attesa di rete' : 'Non connesso al foglio');
     } finally {
       isPulling = false;
       if (pushPending) {
@@ -371,8 +422,10 @@
     }
   }
 
-  // 2. PUSH (Invia le modifiche con coda anti-collisione)
+  // 2. PUSH (invia al foglio; il foglio UNISCE, non sostituisce). Resta "in sospeso" finche' non e' confermato.
   async function pushToCloud(options = {}) {
+    // Mai inviare prima di aver letto il foglio almeno una volta (un telefono nuovo/vuoto non scrive nulla)
+    if (!hasPulledOnce) { pullFromCloud({ silent: true }); return; }
     if (isPushing) {
       pushPending = true;
       return;
@@ -380,18 +433,21 @@
 
     isPushing = true;
     lastPushTimestamp = Date.now();
+    const startedAt = changeCounter;
+    const sentUndelete = Array.from(undeleteQueue);
     updateSyncBadge('syncing', 'Salvataggio sul foglio...');
 
     try {
       const payload = {
         action: 'sync_all',
         deletedIds: Array.from(tombstones),
+        undeleteIds: sentUndelete,
         items: items,
         works: works,
         financings: financings
       };
 
-      await fetch(DEFAULT_SYNC_URL, {
+      const res = await fetch(DEFAULT_SYNC_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8'
@@ -399,16 +455,28 @@
         body: JSON.stringify(payload)
       });
 
-      const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
-      if (!options.silent) {
-        showToast('✅ Modifiche salvate sul Google Sheet!');
+      let data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+
+      if (data && data.status === 'success') {
+        sentUndelete.forEach(id => undeleteQueue.delete(id));
+        saveUndeleteQueue();
+        if (changeCounter === startedAt && tombstones.size === 0) setDirty(false);
+        updateSyncBadge('online', `Sincronizzato alle ${timeLabel()}`);
+        if (!options.silent) showToast('✅ Modifiche salvate sul Google Sheet!');
+      } else if (data && data.status === 'error') {
+        console.warn('Push rifiutato:', data.message);
+        lastPushTimestamp = 0;
+        updateSyncBadge('offline', '⚠️ Salvataggio non riuscito, riprovo...');
+      } else {
+        // Risposta non leggibile: il foglio potrebbe aver salvato comunque. Resta "in sospeso"
+        // e il prossimo controllo (pull) verifica se i dati sono davvero arrivati.
+        updateSyncBadge('syncing', 'Verifica salvataggio...');
       }
     } catch (err) {
       console.warn('Push error:', err);
-      // Spesso Apps Script salva comunque anche se il browser segnala redirect
-      const nowTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      updateSyncBadge('online', `Sincronizzato alle ${nowTime}`);
+      lastPushTimestamp = 0;   // invio fallito: nessuna attesa, si puo' ritentare subito
+      updateSyncBadge('offline', '⚠️ Modifiche salvate sul telefono, in attesa di rete');
     } finally {
       isPushing = false;
       if (pushPending) {
@@ -1469,6 +1537,7 @@
             if (it.financingId === finId) {
               it.financingId = '';
               it.financingName = '';
+              it.updatedAt = new Date().toISOString();
             }
           });
           sendDirectDeleteGet(finId);
@@ -1647,8 +1716,7 @@
 
     elements.btnForceSync.addEventListener('click', () => {
       showToast('🔄 Forzatura sincronizzazione...');
-      pushToCloud({ silent: true });
-      pullFromCloud({ silent: false });
+      pullFromCloud({ silent: false });   // scarica, unisce e, se serve, rimanda al foglio
     });
 
     elements.btnExportBackup.addEventListener('click', exportBackupJson);
@@ -1884,12 +1952,26 @@
     reader.onload = (evt) => {
       try {
         const json = JSON.parse(evt.target.result);
-        if (json.items && Array.isArray(json.items)) items = json.items;
-        else if (Array.isArray(json)) items = json;
-        if (json.works && Array.isArray(json.works)) works = json.works;
-        if (json.financings && Array.isArray(json.financings)) financings = json.financings;
+        const now = new Date().toISOString();
+        const stamp = (arr) => (Array.isArray(arr) ? arr : [])
+          .filter(o => o && o.id)
+          .map(o => Object.assign({}, o, { updatedAt: now }));   // data nuova: l'importato vince
+        const impItems = Array.isArray(json) ? stamp(json) : stamp(json.items);
+        const impWorks = stamp(json.works);
+        const impFin = stamp(json.financings);
 
-        tombstones.clear();
+        // Unisce (non sostituisce) e toglie dagli eliminati cio' che si sta ripristinando di proposito
+        [...impItems, ...impWorks, ...impFin].forEach(o => {
+          tombstones.delete(o.id);
+          undeleteQueue.add(o.id);
+        });
+        saveUndeleteQueue();
+        items = mergeById(items, impItems, new Set());
+        works = mergeById(works, impWorks, new Set());
+        financings = mergeById(financings, impFin, new Set());
+
+        changeCounter++;
+        setDirty(true);
         saveLocalStateOnly();
         renderAll();
         triggerSyncPush();
@@ -1907,7 +1989,7 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=5.3').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=5.4').then((reg) => {
           reg.update(); // Forza l'aggiornamento immediato del service worker
         }).catch(() => {});
       });
