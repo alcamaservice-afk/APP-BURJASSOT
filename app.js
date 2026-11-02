@@ -65,6 +65,7 @@
     btnInstallHeader: document.getElementById('btn-install-header'),
     btnOpenShare: document.getElementById('btn-open-share'),
     btnOpenSync: document.getElementById('btn-open-sync'),
+    btnOpenSettings: document.getElementById('btn-open-settings'),
     syncIcon: document.getElementById('sync-icon'),
     syncStatusIndicator: document.getElementById('sync-status-indicator'),
     headerSyncCaption: document.getElementById('header-sync-caption'),
@@ -218,6 +219,18 @@
     btnImportBackupTrigger: document.getElementById('btn-import-backup-trigger'),
     importBackupFile: document.getElementById('import-backup-file'),
     iosHelper: document.getElementById('ios-helper'),
+
+    // Modal Settings
+    modalSettings: document.getElementById('modal-settings'),
+    btnCloseSettingsModal: document.getElementById('btn-close-settings-modal'),
+    btnCloseSettings: document.getElementById('btn-close-settings'),
+    btnDangerResetAll: document.getElementById('btn-danger-reset-all'),
+    btnDangerResetMaterials: document.getElementById('btn-danger-reset-materials'),
+    btnDangerResetWorks: document.getElementById('btn-danger-reset-works'),
+    settingsCountMat: document.getElementById('settings-count-mat'),
+    settingsCountWorks: document.getElementById('settings-count-works'),
+    btnSettingsExportBackup: document.getElementById('btn-settings-export-backup'),
+    btnSettingsImportBackupTrigger: document.getElementById('btn-settings-import-backup-trigger'),
 
     // Modal Share
     modalShare: document.getElementById('modal-share'),
@@ -1188,6 +1201,147 @@
     isAnyModalOpen = false;
   }
 
+  function openSettingsModal() {
+    if (elements.settingsCountMat) elements.settingsCountMat.textContent = items.length;
+    if (elements.settingsCountWorks) elements.settingsCountWorks.textContent = works.length;
+    openModal(elements.modalSettings);
+  }
+
+  async function resetAllAppData() {
+    const totalCount = items.length + works.length + financings.length;
+    if (totalCount === 0) {
+      showToast('Nessun dato presente nell\'app da cancellare.');
+      return;
+    }
+
+    // 1. Prima verifica di consenso
+    const firstConfirm = confirm(
+      "⚠️ PRIMA VERIFICA DI SICUREZZA:\n\n" +
+      "Sei sicuro di voler CANCELLARE TUTTI i dati attualmente inseriti nell'app?\n\n" +
+      "Verranno eliminati:\n" +
+      `• Materiali / arredi: ${items.length}\n` +
+      `• Lavori / manodopera: ${works.length}\n` +
+      `• Piani di finanziamento: ${financings.length}\n\n` +
+      "Questa operazione permetterà di inserire o riorganizzare i dati da zero senza conflitti."
+    );
+    if (!firstConfirm) return;
+
+    // 2. Seconda verifica di consenso (doppia verifica)
+    const secondConfirm = confirm(
+      "🚨 SECONDA E ULTIMA VERIFICA:\n\n" +
+      "Confermi DEFINITIVAMENTE l'eliminazione totale di tutti i dati?\n\n" +
+      "Tutti gli elementi verranno rimossi da questo dispositivo, dal foglio Google Sheet online e da tutti i dispositivi sincronizzati (cellulare, tablet, computer).\n\n" +
+      "Premi OK per cancellare tutto adesso."
+    );
+    if (!secondConfirm) return;
+
+    closeModal(elements.modalSettings);
+    showToast('⏳ Cancellazione in corso sul Google Sheet...');
+    updateSyncBadge('syncing', 'Cancellazione dati in corso...');
+
+    // Salva tutti gli ID correnti nei tombstones per notificare tutti i dispositivi
+    items.forEach(it => { if (it && it.id) tombstones.add(it.id); });
+    works.forEach(w => { if (w && w.id) tombstones.add(w.id); });
+    financings.forEach(f => { if (f && f.id) tombstones.add(f.id); });
+
+    // Svuota gli array
+    items = [];
+    works = [];
+    financings = [];
+    undeleteQueue.clear();
+    saveUndeleteQueue();
+
+    // Aggiorna lo stato locale e l'interfaccia
+    changeCounter++;
+    setDirty(true);
+    saveLocalStateOnly();
+    renderAll();
+
+    // Sincronizzazione immediata al Google Sheet
+    try {
+      const payload = {
+        action: 'sync_all',
+        deletedIds: Array.from(tombstones),
+        undeleteIds: [],
+        items: [],
+        works: [],
+        financings: []
+      };
+
+      const res = await fetch(DEFAULT_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+
+      let data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+
+      if (data && data.status === 'success') {
+        setDirty(false);
+        updateSyncBadge('online', `Dati azzerati alle ${timeLabel()}`);
+        showToast('🗑️ Tutti i dati sono stati cancellati con successo!');
+      } else {
+        updateSyncBadge('online', `Dati azzerati alle ${timeLabel()}`);
+        showToast('🗑️ Dati cancellati localmente e inviati al foglio!');
+      }
+    } catch (err) {
+      console.warn('Errore cancellazione cloud:', err);
+      updateSyncBadge('offline', 'Dati cancellati localmente, in attesa di rete');
+      showToast('⚠️ Dati azzerati localmente; sincronizzazione completata al ritorno della rete');
+    }
+  }
+
+  async function resetMaterialsOnly() {
+    if (items.length === 0) {
+      showToast('Nessun materiale presente da cancellare.');
+      return;
+    }
+
+    const firstConfirm = confirm(
+      `⚠️ PRIMA VERIFICA DI SICUREZZA:\n\n` +
+      `Sei sicuro di voler cancellare TUTTI i ${items.length} materiali/arredi inseriti?`
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = confirm(
+      `🚨 SECONDA VERIFICA:\n\n` +
+      `Confermi DEFINITIVAMENTE di voler eliminare tutti i materiali sia dall'app che dal Google Sheet?`
+    );
+    if (!secondConfirm) return;
+
+    items.forEach(it => { if (it && it.id) tombstones.add(it.id); });
+    items = [];
+    closeModal(elements.modalSettings);
+    onDataChangedByUser();
+    showToast('🗑️ Tutti i materiali sono stati eliminati');
+  }
+
+  async function resetWorksOnly() {
+    if (works.length === 0) {
+      showToast('Nessun lavoro presente da cancellare.');
+      return;
+    }
+
+    const firstConfirm = confirm(
+      `⚠️ PRIMA VERIFICA DI SICUREZZA:\n\n` +
+      `Sei sicuro di voler cancellare TUTTI i ${works.length} lavori/manodopera inseriti?`
+    );
+    if (!firstConfirm) return;
+
+    const secondConfirm = confirm(
+      `🚨 SECONDA VERIFICA:\n\n` +
+      `Confermi DEFINITIVAMENTE di voler eliminare tutti i lavori sia dall'app che dal Google Sheet?`
+    );
+    if (!secondConfirm) return;
+
+    works.forEach(w => { if (w && w.id) tombstones.add(w.id); });
+    works = [];
+    closeModal(elements.modalSettings);
+    onDataChangedByUser();
+    showToast('🗑️ Tutti i lavori sono stati eliminati');
+  }
+
   function openAddMaterialModal() {
     elements.modalItemTitle.textContent = 'Aggiungi Materiale / Arredo';
     elements.itemIdInput.value = '';
@@ -1800,6 +1954,16 @@
     elements.btnCloseSyncModal.addEventListener('click', () => closeModal(elements.modalSync));
     elements.btnCloseSync.addEventListener('click', () => closeModal(elements.modalSync));
 
+    // Settings Modal (Rotella)
+    elements.btnOpenSettings.addEventListener('click', openSettingsModal);
+    elements.btnCloseSettingsModal.addEventListener('click', () => closeModal(elements.modalSettings));
+    elements.btnCloseSettings.addEventListener('click', () => closeModal(elements.modalSettings));
+    elements.btnDangerResetAll.addEventListener('click', resetAllAppData);
+    elements.btnDangerResetMaterials.addEventListener('click', resetMaterialsOnly);
+    elements.btnDangerResetWorks.addEventListener('click', resetWorksOnly);
+    elements.btnSettingsExportBackup.addEventListener('click', exportBackupJson);
+    elements.btnSettingsImportBackupTrigger.addEventListener('click', () => elements.importBackupFile.click());
+
     elements.btnForceSync.addEventListener('click', () => {
       showToast('🔄 Forzatura sincronizzazione...');
       pullFromCloud({ silent: false });   // scarica, unisce e, se serve, rimanda al foglio
@@ -1817,7 +1981,7 @@
     elements.btnCopyClipboard.addEventListener('click', copyListToClipboard);
     elements.btnExportCsv.addEventListener('click', exportCsv);
 
-    [elements.modalItem, elements.modalWork, elements.modalFinancing, elements.modalWorkPayment, elements.modalSync, elements.modalShare].forEach(m => {
+    [elements.modalItem, elements.modalWork, elements.modalFinancing, elements.modalWorkPayment, elements.modalSync, elements.modalShare, elements.modalSettings].forEach(m => {
       m.addEventListener('click', (e) => {
         if (e.target === m) closeModal(m);
       });
@@ -2077,7 +2241,7 @@
   function setupPWA() {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=5.5').then((reg) => {
+        navigator.serviceWorker.register('./sw.js?v=5.6').then((reg) => {
           reg.update(); // Forza l'aggiornamento immediato del service worker
         }).catch(() => {});
       });

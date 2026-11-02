@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
   <!-- Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=5.5">
+  <link rel="stylesheet" href="style.css?v=5.6">
   
   <!-- Auto-update Service Worker script -->
   <script>
@@ -42,7 +42,7 @@
       <div class="brand-section">
         <img src="icons/icon-192.png" alt="Burjassot Icon" class="brand-logo">
         <div>
-          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.5 SICURA</span></h1>
+          <h1 class="brand-title">Casa Burjassot 🏠 <span style="font-size: 0.68rem; font-weight: 700; background: #22c55e; color: #fff; padding: 2px 7px; border-radius: 999px; vertical-align: middle; display: inline-block;">v5.6</span></h1>
           <span class="brand-subtitle" id="header-sync-caption">Sincronizzazione automatica attiva</span>
         </div>
       </div>
@@ -62,6 +62,11 @@
         <button id="btn-open-sync" class="btn-icon-header" title="Sincronizza subito con Google Sheet">
           <span id="sync-icon">🔄</span>
           <span id="sync-status-indicator" class="sync-status-dot status-syncing" title="Stato sincronizzazione"></span>
+        </button>
+
+        <!-- Settings Button (Rotella Configurazione App) -->
+        <button id="btn-open-settings" class="btn-icon-header" title="Configurazione e gestione dati">
+          <span>⚙️</span>
         </button>
       </div>
     </div>
@@ -679,6 +684,75 @@
     </div>
   </div>
 
+  <!-- MODAL: CONFIGURAZIONE & GESTIONE DATI (ROTELLA) -->
+  <div id="modal-settings" class="modal-backdrop">
+    <div class="modal-dialog" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Impostazioni & Gestione Dati</h3>
+        <button class="btn-close-modal" id="btn-close-settings-modal">✕</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 16px;">
+        
+        <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.45;">
+          <strong style="color: var(--text-main); display: block; margin-bottom: 4px;">🔧 Gestione Veloce Dati & Sincronizzazione</strong>
+          Usa questa sezione per resettare velocemente i dati dell'app e del Google Sheet prima di incollare o riorganizzare i dati da un tuo foglio Excel di backup, impedendo che i vecchi elementi vengano sovrascritti o risincronizzati dai vari dispositivi.
+        </div>
+
+        <!-- Sezione Cancellazione Totale -->
+        <div style="border: 1px solid #FECACA; background: #FEF2F2; border-radius: var(--radius-sm); padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 1.3rem;">⚠️</span>
+            <div>
+              <div style="font-size: 0.92rem; font-weight: 700; color: #991B1B;">Zona Pericolo - Cancellazione Dati</div>
+              <div style="font-size: 0.78rem; color: #B91C1C;">Richiede doppia conferma di sicurezza</div>
+            </div>
+          </div>
+
+          <p style="font-size: 0.82rem; color: #7F1D1D; margin: 0; line-height: 1.4;">
+            Questa funzione elimina tutti i dati inseriti finora (<strong>materiali</strong>, <strong>lavori</strong> e <strong>finanziamenti</strong>) dall'app e dal foglio Google Sheet online, comunicando a tutti i dispositivi connessi di rimuoverli per non creare conflitti.
+          </p>
+
+          <button id="btn-danger-reset-all" class="btn btn-danger" style="width: 100%; padding: 12px; font-size: 0.92rem; font-weight: 700;">
+            🗑️ Cancella Tutti i Dati Inseriti (Reset)
+          </button>
+        </div>
+
+        <!-- Cancellazione Rapida per Categoria -->
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Cancellazione per Categoria</span>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-danger-reset-materials" class="btn btn-secondary" style="flex: 1; font-size: 0.82rem; color: #DC2626; border-color: #FECACA;">
+              🗑️ Solo Materiali (<span id="settings-count-mat">0</span>)
+            </button>
+            <button id="btn-danger-reset-works" class="btn btn-secondary" style="flex: 1; font-size: 0.82rem; color: #DC2626; border-color: #FECACA;">
+              🗑️ Solo Lavori (<span id="settings-count-works">0</span>)
+            </button>
+          </div>
+        </div>
+
+        <!-- Backup di Sicurezza -->
+        <div style="border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-size: 0.82rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Backup di Sicurezza</span>
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">
+            Consigliato: scarica una copia JSON di sicurezza prima di effettuare il reset.
+          </p>
+          <div style="display: flex; gap: 8px;">
+            <button id="btn-settings-export-backup" class="btn btn-secondary" style="flex: 1; font-size: 0.82rem;">
+              📥 Scarica Backup JSON
+            </button>
+            <button id="btn-settings-import-backup-trigger" class="btn btn-secondary" style="flex: 1; font-size: 0.82rem;">
+              📤 Ripristina Backup JSON
+            </button>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-close-settings">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CONDIVISIONE -->
   <div id="modal-share" class="modal-backdrop">
     <div class="modal-dialog">
@@ -728,6 +802,6 @@
   <div id="toast-container" class="toast-container"></div>
 
   <!-- Main JavaScript -->
-  <script src="app.js?v=5.5"></script>
+  <script src="app.js?v=5.6"></script>
 </body>
 </html>
